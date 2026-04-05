@@ -1,0 +1,87 @@
+export const EMOJI_BANK: Record<string, string[]> = {
+  celebration: [
+    "\uD83C\uDF89", "\uD83C\uDF8A", "\uD83E\uDD73", "\uD83C\uDF82",
+    "\uD83C\uDF88", "\uD83C\uDF86", "\uD83C\uDF87", "\uD83C\uDF7E",
+    "\uD83E\uDD42", "\u2728",
+  ],
+  love: [
+    "\u2764\uFE0F", "\uD83D\uDC95", "\uD83D\uDE0D", "\uD83D\uDC96",
+    "\uD83D\uDC98", "\uD83E\uDD70", "\uD83D\uDC9E", "\uD83D\uDC9D",
+    "\uD83D\uDC97", "\uD83D\uDC8B",
+  ],
+  encouragement: [
+    "\uD83D\uDCAA", "\uD83C\uDF1F", "\uD83D\uDD25", "\uD83D\uDE80",
+    "\uD83C\uDFC6", "\u2B50", "\uD83D\uDC4F", "\uD83E\uDEE1",
+  ],
+  greeting: [
+    "\uD83D\uDC4B", "\uD83D\uDE04", "\uD83C\uDF1E", "\uD83C\uDF1D",
+    "\uD83E\uDD17", "\uD83C\uDF08",
+  ],
+  farewell: [
+    "\uD83D\uDC4B", "\uD83D\uDE22", "\uD83C\uDF19", "\uD83D\uDC94",
+    "\uD83D\uDE14", "\uD83D\uDE4F",
+  ],
+  humor: [
+    "\uD83D\uDE02", "\uD83E\uDD23", "\uD83D\uDE04", "\uD83E\uDD2A",
+    "\uD83D\uDE1C", "\uD83C\uDFAD", "\uD83E\uDD21", "\uD83D\uDE39",
+  ],
+  sadness: [
+    "\uD83D\uDE22", "\uD83D\uDCA7", "\uD83E\uDD7A", "\uD83D\uDE1E",
+    "\uD83D\uDC94", "\uD83C\uDF27\uFE0F", "\uD83D\uDE14", "\uD83D\uDD4A\uFE0F",
+  ],
+  anger: [
+    "\uD83D\uDE21", "\uD83D\uDE24", "\uD83E\uDD2C", "\uD83D\uDCA2",
+    "\uD83D\uDD25", "\u26A1", "\uD83D\uDC4A", "\uD83C\uDF2A\uFE0F",
+  ],
+  nature: [
+    "\uD83C\uDF3A", "\uD83C\uDF33", "\uD83C\uDF0A", "\u2600\uFE0F",
+    "\uD83C\uDF19", "\u26F0\uFE0F", "\uD83C\uDF3B", "\uD83C\uDF3F",
+    "\uD83E\uDD8B", "\uD83C\uDF05",
+  ],
+  food: [
+    "\uD83C\uDF55", "\uD83C\uDF82", "\u2615", "\uD83C\uDF54",
+    "\uD83C\uDF70", "\uD83C\uDF6B", "\uD83C\uDF66", "\uD83C\uDF7D\uFE0F",
+  ],
+  travel: [
+    "\u2708\uFE0F", "\uD83C\uDF0D", "\uD83D\uDDFA\uFE0F", "\uD83C\uDFD6\uFE0F",
+    "\uD83C\uDFD4\uFE0F", "\uD83D\uDE97", "\uD83E\uDDED", "\uD83C\uDF04",
+  ],
+  work: [
+    "\uD83D\uDCBC", "\uD83D\uDCCA", "\uD83D\uDCBB", "\uD83D\uDCC5",
+    "\u2709\uFE0F", "\uD83D\uDCDD",
+  ],
+  music: [
+    "\uD83C\uDFB5", "\uD83C\uDFB6", "\uD83C\uDFA4", "\uD83C\uDFB8",
+    "\uD83C\uDFB9", "\uD83D\uDD7A", "\uD83D\uDC83", "\uD83C\uDFA7",
+  ],
+  sports: [
+    "\u26BD", "\uD83C\uDFC0", "\uD83C\uDFC6", "\uD83E\uDD47",
+    "\uD83C\uDFC5", "\uD83C\uDFBE", "\uD83C\uDFC8", "\uD83E\uDD4A",
+  ],
+  weather: [
+    "\u2600\uFE0F", "\uD83C\uDF27\uFE0F", "\u2744\uFE0F", "\u26C8\uFE0F",
+    "\uD83C\uDF08", "\uD83C\uDF2C\uFE0F", "\u26C5", "\uD83C\uDF24\uFE0F",
+  ],
+  technology: [
+    "\uD83D\uDCBB", "\uD83E\uDD16", "\uD83D\uDCF1", "\u2328\uFE0F",
+    "\uD83D\uDDA5\uFE0F", "\uD83D\uDE80",
+  ],
+  money: [
+    "\uD83D\uDCB0", "\uD83D\uDCB5", "\uD83D\uDCB3", "\uD83D\uDCB8",
+    "\uD83D\uDCE8", "\uD83C\uDFE6",
+  ],
+  family: [
+    "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66",
+    "\uD83D\uDC76", "\uD83D\uDC69", "\uD83D\uDC68",
+    "\uD83E\uDDD1\u200D\uD83E\uDD1D\u200D\uD83E\uDDD1", "\uD83C\uDFE0",
+    "\u2764\uFE0F", "\uD83E\uDEF6",
+  ],
+  health: [
+    "\uD83E\uDDD8", "\uD83C\uDFCB\uFE0F", "\uD83C\uDF4E", "\uD83D\uDCAA",
+    "\uD83E\uDDCA", "\uD83C\uDFC3",
+  ],
+  time: [
+    "\u23F0", "\uD83C\uDF05", "\uD83C\uDF19", "\uD83C\uDF1E",
+    "\uD83C\uDF84", "\uD83C\uDF89",
+  ],
+};

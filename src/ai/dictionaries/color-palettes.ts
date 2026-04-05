@@ -1,0 +1,60 @@
+import type { ColorPalette } from "../../types/theme";
+
+export const COLOR_PALETTES: Record<string, ColorPalette> = {
+  joyful: {
+    name: "joyful",
+    background: "#FFF7E6",
+    backgroundEnd: "#FFE0B2",
+    text: "#4A2800",
+    accent: "#FF9800",
+    particle: "#FFD54F",
+  },
+  romantic: {
+    name: "romantic",
+    background: "#FFF0F5",
+    backgroundEnd: "#F8BBD0",
+    text: "#880E4F",
+    accent: "#E91E63",
+    particle: "#F48FB1",
+  },
+  melancholy: {
+    name: "melancholy",
+    background: "#E3F2FD",
+    backgroundEnd: "#90CAF9",
+    text: "#1A237E",
+    accent: "#5C6BC0",
+    particle: "#7986CB",
+  },
+  energetic: {
+    name: "energetic",
+    background: "#FFF3E0",
+    backgroundEnd: "#FF8A65",
+    text: "#FFFFFF",
+    accent: "#FF5722",
+    particle: "#FFAB91",
+  },
+  calm: {
+    name: "calm",
+    background: "#E8F5E9",
+    backgroundEnd: "#A5D6A7",
+    text: "#1B5E20",
+    accent: "#4CAF50",
+    particle: "#81C784",
+  },
+  dark: {
+    name: "dark",
+    background: "#1A1A2E",
+    backgroundEnd: "#16213E",
+    text: "#E0E0E0",
+    accent: "#7C4DFF",
+    particle: "#B388FF",
+  },
+  neutral: {
+    name: "neutral",
+    background: "#FAFAFA",
+    backgroundEnd: "#E0E0E0",
+    text: "#212121",
+    accent: "#757575",
+    particle: "#BDBDBD",
+  },
+};

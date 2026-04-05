@@ -1,0 +1,53 @@
+{
+  "name": "emoji-story-video",
+  "version": "1.0.0",
+  "description": "Generate animated story videos from text with emojis and professional animations",
+  "type": "module",
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "remotion bundle",
+    "generate": "tsx src/cli/generate.ts",
+    "render": "tsx src/cli/render.ts",
+    "batch": "tsx src/cli/batch.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev:web": "vite --config src/web/vite.config.ts",
+    "dev:api": "tsx src/web/api/render-api.ts",
+    "build:web": "vite build --config src/web/vite.config.ts",
+    "start": "tsx src/web/api/render-api.ts",
+    "lint": "eslint src && tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^1.48.0",
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.0",
+    "@remotion/player": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "@remotion/shapes": "^4.0.0",
+    "@remotion/transitions": "^4.0.0",
+    "@remotion/zod-types": "^4.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0",
+    "tsx": "^4.19.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "^4.0.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.2.3",
+    "@types/web": "^0.0.166",
+    "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.8.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.1",
+    "vitest": "^3.0.0"
+  }
+}
