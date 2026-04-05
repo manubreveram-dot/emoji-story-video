@@ -4,11 +4,17 @@ import type { ImageGenerationProgress } from "../../ai/image-generator";
 type GenerationProgressProps = {
   progress: ImageGenerationProgress[];
   totalScenes: number;
+  title?: string;
+  subtitle?: string;
+  stageLabel?: string;
 };
 
 export const GenerationProgress: React.FC<GenerationProgressProps> = ({
   progress,
   totalScenes,
+  title = "Generating images with Gemini...",
+  subtitle,
+  stageLabel = "Scene",
 }) => {
   const done = progress.filter((p) => p.status === "done").length;
   const errors = progress.filter((p) => p.status === "error").length;
@@ -16,12 +22,17 @@ export const GenerationProgress: React.FC<GenerationProgressProps> = ({
   return (
     <div style={{ maxWidth: 500, margin: "0 auto", padding: "60px 20px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 700, textAlign: "center", marginBottom: 8 }}>
-        Generating images with Gemini...
+        {title}
       </h2>
-      <p style={{ textAlign: "center", color: "#888", fontSize: 14, marginBottom: 40 }}>
+      <p style={{ textAlign: "center", color: "#888", fontSize: 14, marginBottom: 8 }}>
         {done}/{totalScenes} scenes complete
         {errors > 0 && <span style={{ color: "#FF6B6B" }}> ({errors} errors)</span>}
       </p>
+      {subtitle && (
+        <p style={{ textAlign: "center", color: "#666", fontSize: 13, marginBottom: 40 }}>
+          {subtitle}
+        </p>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {progress.map((p, i) => (
@@ -38,7 +49,7 @@ export const GenerationProgress: React.FC<GenerationProgressProps> = ({
             }}
           >
             <span style={{ fontSize: 13, color: "#888", minWidth: 80 }}>
-              Scene {i + 1}
+              {stageLabel} {i + 1}
             </span>
 
             {/* Progress bar */}

@@ -1,0 +1,556 @@
+import { GoogleGenAI, VideoGenerationReferenceType } from "@google/genai";
+import fs from "fs";
+import path from "path";
+import { API_CONFIG } from "../config/api";
+import type { ImageStyle, Script, ScriptScene } from "../types/script";
+import { buildDefaultActs, remapActs } from "./act-mapper";
+import { estimatePipelineCost, mergeCostEstimate } from "./cost-estimator";
+import { buildImagePromptV2, buildVeoPromptEnglish } from "./prompts/image-prompt-v2";
+import { buildScriptPromptV2 } from "./prompts/script-prompt-v2";
+import type {
+  GenerateHeroClipOptions,
+  GenerateImagePackV2Options,
+  GenerateScriptV2Options,
+  ImageAssetV2,
+  PhaseCostEstimate,
+  QualityRubricResult,
+  ScriptLineV2,
+  ScriptPackageV2,
+  StyleBible,
+  VeoClipResultV2,
+  VisualActV2,
+  VisualPackageV2,
+} from "./v2-types";
+
+type RawScriptV2Response = {
+  title: string;
+  language: string;
+  style: ImageStyle;
+  styleBible: Omit<StyleBible, "artStyle">;
+  lines: Array<{
+    order: number;
+    narration: string;
+    mood: ScriptScene["mood"];
+    emojis: string[];
+    durationSeconds: number;
+    visualIntent: string;
+  }>;
+};
+
+function extractJson(text: string): string {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("Failed to parse JSON from Gemini response");
+  }
+
+  return jsonMatch[0];
+}
+
+function createGeminiClient(): GoogleGenAI {
+  const apiKey = API_CONFIG.gemini.apiKey;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY not set");
+  }
+
+  return new GoogleGenAI({ apiKey });
+}
+
+function createVertexClient(): GoogleGenAI | null {
+  if (
+    !API_CONFIG.veo.vertexEnabled ||
+    !API_CONFIG.veo.project ||
+    !API_CONFIG.veo.location
+  ) {
+    return null;
+  }
+
+  return new GoogleGenAI({
+    vertexai: true,
+    project: API_CONFIG.veo.project,
+    location: API_CONFIG.veo.location,
+  });
+}
+
+function normalizeDuration(lines: ScriptLineV2[]): ScriptLineV2[] {
+  const target = API_CONFIG.pipelineV2.targetDurationSeconds;
+  const current = lines.reduce((sum, line) => sum + line.durationSeconds, 0);
+  if (current === target) {
+    return lines;
+  }
+
+  const adjusted = [...lines];
+  let remaining = target;
+  for (let index = 0; index < adjusted.length; index++) {
+    const linesLeft = adjusted.length - index;
+    const isLast = index === adjusted.length - 1;
+    const normalizedDuration = isLast
+      ? remaining
+      : Math.max(2, Math.round(remaining / linesLeft));
+
+    adjusted[index] = {
+      ...adjusted[index],
+      durationSeconds: normalizedDuration,
+    };
+    remaining -= normalizedDuration;
+  }
+
+  return adjusted;
+}
+
+function buildQualityRubric(lines: ScriptLineV2[], styleBible: StyleBible): QualityRubricResult {
+  const issues: string[] = [];
+
+  if (lines.length !== API_CONFIG.pipelineV2.targetLineCount) {
+    issues.push(`Expected 10 lines, got ${lines.length}.`);
+  }
+
+  const totalDuration = lines.reduce((sum, line) => sum + line.durationSeconds, 0);
+  if (totalDuration !== API_CONFIG.pipelineV2.targetDurationSeconds) {
+    issues.push(
+      `Expected ${API_CONFIG.pipelineV2.targetDurationSeconds}s total, got ${totalDuration}s.`,
+    );
+  }
+
+  if (!styleBible.characterDescriptors.trim()) {
+    issues.push("Style bible must include stable character descriptors.");
+  }
+
+  if (!styleBible.negativePrompt.trim()) {
+    issues.push("Style bible must include a negative prompt.");
+  }
+
+  const tooLongLines = lines.filter(
+    (line) => line.narration.trim().split(/\s+/).length > 12,
+  );
+  if (tooLongLines.length > 0) {
+    issues.push("Some narration lines exceed 12 words.");
+  }
+
+  return {
+    passed: issues.length === 0,
+    score: Math.max(0, 100 - issues.length * 20),
+    issues,
+    attempts: 1,
+  };
+}
+
+function toScriptLines(rawLines: RawScriptV2Response["lines"]): ScriptLineV2[] {
+  return rawLines.map((line, index) => ({
+    id: `line-${index + 1}`,
+    order: index + 1,
+    narration: line.narration.trim(),
+    mood: line.mood,
+    emojis: line.emojis,
+    durationSeconds: Math.max(2, Math.round(line.durationSeconds)),
+    visualIntent: line.visualIntent.trim(),
+  }));
+}
+
+function toLegacyScript(
+  title: string,
+  style: ImageStyle,
+  lines: ScriptLineV2[],
+): Script {
+  const transitions: ScriptScene["transition"][] = ["fade", "slide", "wipe", "flip"];
+  const imageAnimations: ScriptScene["imageAnimation"][] = [
+    "ken-burns-in",
+    "ken-burns-out",
+    "parallax",
+    "zoom-pulse",
+  ];
+
+  const scenes: ScriptScene[] = lines.map((line, index) => ({
+    id: `scene-${index + 1}`,
+    order: index + 1,
+    narration: line.narration,
+    visualDescription: line.visualIntent,
+    mood: line.mood,
+    emojis: line.emojis,
+    durationSeconds: line.durationSeconds,
+    layout:
+      index === 0 || index === lines.length - 1
+        ? "title"
+        : index % 3 === 0
+          ? "cinematic"
+          : "image-text",
+    imageAnimation: imageAnimations[index % imageAnimations.length],
+    transition: transitions[index % transitions.length],
+  }));
+
+  return {
+    title,
+    totalDurationSeconds: API_CONFIG.pipelineV2.targetDurationSeconds,
+    style,
+    scenes,
+  };
+}
+
+function toStyleBible(
+  artStyle: string,
+  rawStyleBible: RawScriptV2Response["styleBible"],
+): StyleBible {
+  return {
+    artStyle,
+    palette: rawStyleBible.palette.trim(),
+    lighting: rawStyleBible.lighting.trim(),
+    camera: rawStyleBible.camera.trim(),
+    characterDescriptors: rawStyleBible.characterDescriptors.trim(),
+    negativePrompt: rawStyleBible.negativePrompt.trim(),
+    seedBase: Math.max(1, Math.round(rawStyleBible.seedBase)),
+  };
+}
+
+function buildScriptPackage(
+  idea: string,
+  payload: RawScriptV2Response,
+  attempts: number,
+  costEstimate: PhaseCostEstimate,
+  actGroups?: Array<[number, number]>,
+): ScriptPackageV2 {
+  const normalizedLines = normalizeDuration(toScriptLines(payload.lines));
+  const styleBible = toStyleBible(payload.style.artStyle, payload.styleBible);
+  const quality = buildQualityRubric(normalizedLines, styleBible);
+  quality.attempts = attempts;
+  const acts = actGroups
+    ? remapActs(normalizedLines, actGroups)
+    : buildDefaultActs(normalizedLines);
+  const legacyScript = toLegacyScript(payload.title, payload.style, normalizedLines);
+
+  return {
+    id: `script-v2-${Date.now()}`,
+    title: payload.title.trim(),
+    idea,
+    language: payload.language.trim(),
+    totalDurationSeconds: API_CONFIG.pipelineV2.targetDurationSeconds,
+    style: payload.style,
+    styleBible,
+    lines: normalizedLines,
+    acts,
+    quality,
+    costEstimate,
+    legacyScript,
+  };
+}
+
+async function generateScriptAttempt(
+  ai: GoogleGenAI,
+  idea: string,
+  artStyle: string,
+): Promise<RawScriptV2Response> {
+  const response = await ai.models.generateContent({
+    model: API_CONFIG.gemini.scriptModelV2,
+    contents: buildScriptPromptV2(
+      idea,
+      artStyle,
+      API_CONFIG.pipelineV2.targetDurationSeconds,
+    ),
+    config: {
+      responseMimeType: "application/json",
+    },
+  });
+
+  return JSON.parse(extractJson(response.text ?? "")) as RawScriptV2Response;
+}
+
+export async function generateScriptV2(
+  idea: string,
+  artStyle = "3d digital art",
+  options?: GenerateScriptV2Options,
+): Promise<ScriptPackageV2> {
+  const ai = createGeminiClient();
+  const baseEstimate = estimatePipelineCost({
+    includeVeo: options?.includeVeo ?? API_CONFIG.veo.enabledDefault,
+    capUsd: options?.costCapUsd,
+  });
+
+  let lastPackage: ScriptPackageV2 | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const payload = await generateScriptAttempt(ai, idea, artStyle);
+    const scriptPackage = buildScriptPackage(
+      idea,
+      payload,
+      attempt,
+      baseEstimate,
+      options?.actGroups,
+    );
+
+    lastPackage = scriptPackage;
+    if (scriptPackage.quality.passed) {
+      return scriptPackage;
+    }
+  }
+
+  if (!lastPackage) {
+    throw new Error("Failed to generate Script V2");
+  }
+
+  return lastPackage;
+}
+
+async function translatePromptToEnglish(
+  ai: GoogleGenAI,
+  text: string,
+): Promise<string> {
+  if (/^[\x00-\x7F\s.,:;!?'"()/-]+$/.test(text)) {
+    return text;
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: API_CONFIG.gemini.translationModel,
+      contents: `Translate this visual prompt to natural English. Return only the translation:\n${text}`,
+    });
+
+    return (response.text ?? text).trim();
+  } catch {
+    return text;
+  }
+}
+
+function ensureOutputDir(outputDir: string): void {
+  fs.mkdirSync(outputDir, { recursive: true });
+}
+
+function writeBase64Asset(
+  outputDir: string,
+  filename: string,
+  data: string,
+): string {
+  ensureOutputDir(outputDir);
+  const filePath = path.join(outputDir, filename);
+  fs.writeFileSync(filePath, Buffer.from(data, "base64"));
+  return filename;
+}
+
+async function generateSingleActImage(
+  ai: GoogleGenAI,
+  act: VisualActV2,
+  scriptPackage: ScriptPackageV2,
+  outputDir: string,
+): Promise<ImageAssetV2> {
+  const prompt = buildImagePromptV2(
+    act,
+    scriptPackage.style,
+    scriptPackage.styleBible,
+  );
+
+  const response = await ai.models.generateImages({
+    model: API_CONFIG.gemini.imagePackModel,
+    prompt,
+    config: {
+      numberOfImages: 1,
+      aspectRatio: "9:16",
+      outputMimeType: "image/png",
+      includeRaiReason: true,
+      enhancePrompt: true,
+      seed: scriptPackage.styleBible.seedBase + act.order,
+      negativePrompt: scriptPackage.styleBible.negativePrompt,
+    },
+  });
+
+  const image = response.generatedImages?.[0]?.image;
+  if (!image?.imageBytes) {
+    const reason = response.generatedImages?.[0]?.raiFilteredReason;
+    throw new Error(
+      reason
+        ? `Image filtered for ${act.id}: ${reason}`
+        : `No image bytes returned for ${act.id}`,
+    );
+  }
+
+  const filename = writeBase64Asset(
+    outputDir,
+    `${act.id}.png`,
+    image.imageBytes,
+  );
+
+  return {
+    actId: act.id,
+    filename,
+    prompt,
+    model: API_CONFIG.gemini.imagePackModel,
+  };
+}
+
+export async function generateImagePackV2(
+  scriptPackage: ScriptPackageV2,
+  options: GenerateImagePackV2Options,
+): Promise<VisualPackageV2> {
+  const ai = createGeminiClient();
+  const useVeo = options.useVeo ?? scriptPackage.costEstimate.veoAllowed;
+  const baseEstimate = estimatePipelineCost({
+    imageCount: scriptPackage.acts.length,
+    includeVeo: useVeo,
+    capUsd: options.costCapUsd,
+  });
+
+  const images: ImageAssetV2[] = [];
+  for (const act of scriptPackage.acts) {
+    images.push(
+      await generateSingleActImage(ai, act, scriptPackage, options.outputDir),
+    );
+  }
+
+  const heroClip = useVeo
+    ? await generateHeroClipV2(
+        scriptPackage,
+        images[0] ?? null,
+        {
+          outputDir: options.outputDir,
+          costCapUsd: options.costCapUsd,
+        },
+      )
+    : {
+        enabled: false,
+        skippedReason: "Veo disabled for this request.",
+      };
+
+  const costEstimate = mergeCostEstimate(baseEstimate, {
+    veoAllowed: heroClip.enabled,
+    fallbackReason: heroClip.skippedReason,
+  });
+
+  return {
+    script: scriptPackage,
+    styleBible: scriptPackage.styleBible,
+    images,
+    heroClip,
+    costEstimate,
+  };
+}
+
+function hasVertexAccess(): boolean {
+  return Boolean(API_CONFIG.veo.project && API_CONFIG.veo.location);
+}
+
+async function pollVeoOperation(
+  ai: GoogleGenAI,
+  operation: Awaited<ReturnType<GoogleGenAI["models"]["generateVideos"]>>,
+): Promise<typeof operation> {
+  let currentOperation = operation;
+
+  for (let attempt = 0; attempt < 30; attempt++) {
+    if (currentOperation.done) {
+      return currentOperation;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    currentOperation = await ai.operations.getVideosOperation({
+      operation: currentOperation,
+    });
+  }
+
+  return currentOperation;
+}
+
+export async function generateHeroClipV2(
+  scriptPackage: ScriptPackageV2,
+  firstImage: ImageAssetV2 | null,
+  options: GenerateHeroClipOptions,
+): Promise<VeoClipResultV2> {
+  const estimate = estimatePipelineCost({
+    imageCount: scriptPackage.acts.length,
+    includeVeo: API_CONFIG.veo.enabledDefault,
+    capUsd: options.costCapUsd,
+  });
+
+  if (!estimate.veoAllowed) {
+    return {
+      enabled: false,
+      skippedReason: estimate.fallbackReason ?? "Cost cap disabled Veo.",
+    };
+  }
+
+  if (!firstImage) {
+    return {
+      enabled: false,
+      skippedReason: "No image available for the hero clip reference.",
+    };
+  }
+
+  if (!hasVertexAccess()) {
+    return {
+      enabled: false,
+      skippedReason: "Vertex AI credentials are not configured.",
+    };
+  }
+
+  const vertexClient = createVertexClient();
+  if (!vertexClient) {
+    return {
+      enabled: false,
+      skippedReason: "Unable to initialize Vertex AI client.",
+    };
+  }
+
+  const geminiClient = createGeminiClient();
+  const firstAct = scriptPackage.acts[0];
+  const translatedSummary = await translatePromptToEnglish(
+    geminiClient,
+    firstAct.summary,
+  );
+  const promptEn = buildVeoPromptEnglish(
+    firstAct,
+    scriptPackage.styleBible,
+    translatedSummary,
+  );
+
+  try {
+    const imageBytes = fs.readFileSync(path.join(options.outputDir, firstImage.filename), {
+      encoding: "base64",
+    });
+
+    let operation = await vertexClient.models.generateVideos({
+      model: API_CONFIG.veo.model,
+      source: {
+        prompt: promptEn,
+      },
+      config: {
+        aspectRatio: API_CONFIG.veo.aspectRatio,
+        resolution: API_CONFIG.veo.resolution,
+        durationSeconds: API_CONFIG.veo.clipSeconds,
+        referenceImages: [
+          {
+            image: {
+              imageBytes,
+              mimeType: "image/png",
+            },
+            referenceType: VideoGenerationReferenceType.ASSET,
+          },
+        ],
+      },
+    });
+
+    operation = await pollVeoOperation(vertexClient, operation);
+    const generatedVideo = operation.response?.generatedVideos?.[0];
+    if (!generatedVideo) {
+      return {
+        enabled: false,
+        skippedReason: "Veo operation completed without a generated video.",
+        operationName: operation.name,
+        promptEn,
+      };
+    }
+
+    const filename = "hero-veo.mp4";
+    await vertexClient.files.download({
+      file: generatedVideo,
+      downloadPath: path.join(options.outputDir, filename),
+    });
+
+    return {
+      enabled: true,
+      model: API_CONFIG.veo.model,
+      operationName: operation.name,
+      filename,
+      promptEn,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      enabled: false,
+      skippedReason: `Veo fallback activated: ${message}`,
+      promptEn,
+    };
+  }
+}

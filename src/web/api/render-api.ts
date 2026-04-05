@@ -7,10 +7,23 @@ import { generateScript } from "../../ai/script-generator";
 import { generateAllImages } from "../../ai/image-generator";
 import type { Script } from "../../types/script";
 import type { ImageGenerationProgress } from "../../ai/image-generator";
+import {
+  createRenderJob,
+  createScriptDraft,
+  createVisualJob,
+  getAsset,
+  getAssetFilePath,
+  getRenderJob,
+  getScriptDraft,
+  getVisualJob,
+  startCleanupLoop,
+  updateScriptDraft,
+} from "./v2-runtime";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+startCleanupLoop();
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
@@ -101,6 +114,136 @@ app.get("/api/images/:jobId", (req, res) => {
     return;
   }
   res.json(job);
+});
+
+app.post("/api/script/v2", async (req, res) => {
+  const { idea, artStyle, costCapUsd, budgetCapUsd, useVeo } = req.body as {
+    idea?: string;
+    artStyle?: string;
+    costCapUsd?: number;
+    budgetCapUsd?: number;
+    useVeo?: boolean;
+  };
+
+  if (!idea?.trim()) {
+    res.status(400).json({ error: "idea is required" });
+    return;
+  }
+
+  try {
+    const draft = await createScriptDraft({
+      idea: idea.trim(),
+      artStyle,
+      costCapUsd: budgetCapUsd ?? costCapUsd,
+      useVeo,
+    });
+    res.status(201).json(draft);
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Script V2 generation failed",
+    });
+  }
+});
+
+app.patch("/api/script/v2/:id", (req, res) => {
+  try {
+    const draft = updateScriptDraft(req.params.id, req.body ?? {});
+    res.json(draft);
+  } catch (error) {
+    res.status(404).json({
+      error: error instanceof Error ? error.message : "Script V2 draft not found",
+    });
+  }
+});
+
+app.post("/api/visuals/v2/jobs", async (req, res) => {
+  const { scriptId, regenerateActIndex } = req.body as {
+    scriptId?: string;
+    regenerateActIndex?: number;
+  };
+  if (!scriptId) {
+    res.status(400).json({ error: "scriptId is required" });
+    return;
+  }
+
+  if (!getScriptDraft(scriptId)) {
+    res.status(404).json({ error: "Script V2 draft not found" });
+    return;
+  }
+
+  try {
+    const job = await createVisualJob(scriptId, regenerateActIndex);
+    res.status(202).json({
+      jobId: job.jobId,
+      status: job.status,
+      warning: job.message,
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Visual job creation failed",
+    });
+  }
+});
+
+app.get("/api/visuals/v2/jobs/:jobId", (req, res) => {
+  const job = getVisualJob(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ error: "Visual job not found" });
+    return;
+  }
+
+  res.json(job);
+});
+
+app.post("/api/render/v2/jobs", async (req, res) => {
+  const { scriptId, visualJobId } = req.body as {
+    scriptId?: string;
+    visualJobId?: string;
+  };
+
+  if (!scriptId || !visualJobId) {
+    res.status(400).json({ error: "scriptId and visualJobId are required" });
+    return;
+  }
+
+  try {
+    const job = await createRenderJob(scriptId, visualJobId);
+    res.status(202).json({
+      jobId: job.jobId,
+      status: job.status,
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Render job creation failed",
+    });
+  }
+});
+
+app.get("/api/render/v2/jobs/:jobId", (req, res) => {
+  const job = getRenderJob(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ error: "Render job not found" });
+    return;
+  }
+
+  res.json(job);
+});
+
+app.get("/api/assets/:assetId/download", (req, res) => {
+  const asset = getAsset(req.params.assetId);
+  if (!asset) {
+    res.status(404).json({ error: "Asset not found or expired" });
+    return;
+  }
+
+  const filePath = getAssetFilePath(req.params.assetId);
+  if (!filePath || !fs.existsSync(filePath)) {
+    res.status(404).json({ error: "Asset file missing" });
+    return;
+  }
+
+  res.setHeader("Content-Type", asset.contentType);
+  res.download(filePath, asset.filename);
 });
 
 // Serve generated images

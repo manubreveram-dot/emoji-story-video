@@ -4,6 +4,7 @@ import path from "path";
 import { API_CONFIG } from "../config/api";
 import { buildImagePrompt } from "./prompts/image-prompt";
 import type { ImageStyle, ScriptScene } from "../types/script";
+export { generateImagePackV2, generateHeroClipV2 } from "./pipeline-v2";
 
 export type ImageGenerationProgress = {
   sceneId: string;

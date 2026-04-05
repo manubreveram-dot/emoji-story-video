@@ -1,120 +1,86 @@
 # emoji-story-video
 
-Genera videos cortos desde una idea: crea guion, genera imagenes por escena con Gemini/Imagen y luego renderiza preview/video.
+Genera videos cortos desde una idea: script, visuales, render y descarga web.
 
-## Estado actual del proyecto
+## Estado actual
 
-- Frontend y API quedan en un solo servicio para produccion.
-- El frontend usa rutas relativas (`/api/...`) por defecto.
-- En local, Vite hace proxy a `http://localhost:3001` para `/api` y `/generated`.
-- El backend lee `PORT` desde entorno (compatible con Railway).
-- La generacion de imagenes usa fallback de modelos (`GEMINI_IMAGE_MODELS`).
+- El backend legacy ya funciona en Railway y sirve la web build.
+- El flujo actual todavía usa 10 escenas e imágenes secuenciales.
+- El botón `Export MP4` de la UI actual aún es un placeholder.
+- La siguiente evolución del proyecto es el flujo `V2`: `10 frases -> 4 actos -> 4 visuales consistentes -> 1 clip Veo -> MP4 + descargas`.
 
-## Requisitos
+## Flujo objetivo V2
 
-- Node.js 20+
-- Cuenta en Google AI Studio con billing activo
-- `GEMINI_API_KEY`
-- Cuenta en GitHub y Railway
+1. `Idea Studio`
+2. `Script Lab`
+3. `Visual Review`
+4. `Render & Download`
+
+### Pipeline objetivo
+
+- `Script Engine V2`: 10 frases con `gemini-2.5-flash-lite`, validadas con una rúbrica y 1 reintento condicional.
+- `Act Mapper`: agrupa las 10 frases en 4 actos editables.
+- `Style Bible Builder`: fija estilo, paleta, iluminación, cámara, personajes, negativos y semilla base.
+- `Image Pack Generator`: crea solo 4 imágenes consistentes con Imagen Fast.
+- `Veo Hero Clip`: genera 1 clip hero desde la primera imagen con prompt en inglés.
+- `Composer`: une clip Veo, 4 imágenes y las 10 frases en un video final.
+- `Asset Pack`: exporta `final.mp4`, `hero-veo.mp4`, `images.zip` y `manifest.json`.
+
+## Costos y límites
+
+- El script con IA sí consume tokens y factura uso.
+- El flujo V2 está pensado para mantener el video por debajo de `US$0.50` por defecto.
+- Si el costo estimado supera el cap, el sistema debe degradar a modo ahorro sin Veo.
+- Los prompts de Veo se traducen automáticamente a inglés para mejorar consistencia.
 
 ## Variables de entorno
-
-Crear `.env`:
 
 ```env
 GEMINI_API_KEY=tu_api_key
 GEMINI_IMAGE_MODELS=imagen-4.0-fast-generate-001,gemini-2.0-flash-preview-image-generation,gemini-2.5-flash-image
-```
-
-Opcional para frontend separado:
-
-```env
 VITE_API_BASE=https://tu-api.example.com
 ```
 
-## Ejecutar en local
+Variables planeadas para el flujo V2:
 
-1. Instalar dependencias
-
-```bash
-npm install
+```env
+FEATURE_V2_PIPELINE=true
+COST_CAP_USD=0.50
+VEO_ENABLED=true
+VEO_CLIP_SECONDS=4
+ASSET_TTL_MINUTES=60
 ```
 
-2. Levantar API
+## Railway
 
-```bash
-npm run dev:api
-```
+Railway corre el backend y sirve la web build.
 
-3. En otra terminal, levantar web
+1. Conectar el repo de GitHub.
+2. Definir variables de entorno.
+3. Redeploy.
+4. Verificar `GET /health`.
+5. Abrir la URL publica de Railway.
 
-```bash
-npm run dev:web
-```
+## Checklist manual en Railway
 
-4. Abrir `http://localhost:5173`
-
-## Subir a GitHub (desde cero)
-
-1. Inicializar repo local
-
-```bash
-git init
-git branch -M main
-git add .
-git commit -m "feat: prepare emoji-story-video for deploy"
-```
-
-2. Crear repo vacio en GitHub (web)
-
-3. Conectar remoto y subir
-
-```bash
-git remote add origin https://github.com/TU_USUARIO/emoji-story-video.git
-git push -u origin main
-```
-
-Si ya tenias repo local, solo usa:
-
-```bash
-git add .
-git commit -m "feat: deploy updates"
-git push
-```
-
-## Deploy en Railway
-
-### Opcion A: desde GitHub (recomendada)
-
-1. Railway -> `New Project` -> `Deploy from GitHub repo`
-2. Seleccionar este repositorio
-3. Railway leerá `railway.json`
-4. En `Variables`, agregar:
-- `GEMINI_API_KEY`
-- `GEMINI_IMAGE_MODELS` (opcional si quieres override)
-5. Deploy
-6. Verificar:
-- `GET /health` devuelve `{ "ok": true }`
-- La app carga y puede llamar `/api/script` y `/api/images`
-
-### Opcion B: con CLI (opcional)
-
-```bash
-npm i -g @railway/cli
-railway login
-railway link
-railway up
-```
+- `GET /health` responde `{"ok":true}`.
+- La web abre desde la URL publica.
+- El script se genera sin errores.
+- La pantalla de progreso muestra avance real.
+- El export final entrega una descarga real.
+- La UI final ofrece descarga de video, imagenes y asset pack.
 
 ## Comandos utiles
 
-- `npm run build:web`: build del frontend para produccion (`dist/web`)
-- `npm start`: inicia API + sirve frontend build si existe
-- `npm run generate -- "tu idea"`: flujo CLI completo (script + imagenes + render)
+```bash
+npm install
+npm run dev:api
+npm run dev:web
+npm run build:web
+npm start
+```
 
-## Costos rapidos orientativos
+## Notas
 
-- `Imagen 4 Fast`: aprox `USD 0.02` por imagen
-- 10 imagenes: aprox `USD 0.20`
-
-Revisa precios vigentes antes de escalar trafico, porque pueden cambiar por modelo/region.
+- `README.md` documenta el contrato objetivo V2; el backend legacy sigue siendo la base actual.
+- La siguiente iteracion del desarrollo debe implementar el flujo V2 sin romper el modo actual.

@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { API_CONFIG } from "../config/api";
 import { buildScriptPrompt } from "./prompts/script-prompt";
 import type { Script, ScriptScene } from "../types/script";
+export { generateScriptV2 } from "./pipeline-v2";
 
 export async function generateScript(
   idea: string,
