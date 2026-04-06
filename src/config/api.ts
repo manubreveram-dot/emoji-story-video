@@ -123,6 +123,20 @@ export const API_CONFIG = {
       return getImageModels()[0] ?? DEFAULT_IMAGE_MODELS[0];
     },
   },
+  tts: {
+    get enabledDefault(): boolean {
+      return getBooleanEnv("TTS_ENABLED_DEFAULT", true);
+    },
+    get model(): string {
+      return getEnvValue("TTS_MODEL") ?? "gemini-2.5-flash-preview-tts";
+    },
+    get languageCode(): string {
+      return getEnvValue("TTS_LANGUAGE_CODE") ?? "es-US";
+    },
+    get voiceName(): string {
+      return getEnvValue("TTS_VOICE_NAME") ?? "Kore";
+    },
+  },
   veo: {
     get enabledDefault(): boolean {
       return getBooleanEnv("VEO_ENABLED_DEFAULT", true);
@@ -136,7 +150,7 @@ export const API_CONFIG = {
     resolution: "720p" as const,
     aspectRatio: "9:16" as const,
     get vertexEnabled(): boolean {
-      return getBooleanEnv("GOOGLE_GENAI_USE_VERTEXAI", true);
+      return getBooleanEnv("GOOGLE_GENAI_USE_VERTEXAI", false);
     },
     get project(): string {
       return getEnvValue("GOOGLE_CLOUD_PROJECT") ?? "";

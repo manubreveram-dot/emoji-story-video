@@ -72,7 +72,7 @@ export type ScriptDocumentV2 = {
   };
 };
 
-export type GeneratedAssetKind = "image" | "video" | "archive" | "manifest";
+export type GeneratedAssetKind = "image" | "video" | "audio" | "archive" | "manifest";
 
 export type GeneratedAsset = {
   id: string;
@@ -130,6 +130,7 @@ export type RenderPack = {
   message?: string;
   progress: JobProgressItem[];
   finalVideo?: GeneratedAsset;
+  narrationAudio?: GeneratedAsset;
   imageZip?: GeneratedAsset;
   heroVideo?: GeneratedAsset;
   manifest?: GeneratedAsset;

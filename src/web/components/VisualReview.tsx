@@ -32,6 +32,12 @@ export const VisualReview: React.FC<VisualReviewProps> = ({
   visuals?.images.forEach((asset, index) => {
     imagesByAct.set(asset.actIndex ?? index, asset);
   });
+  const isGenerating = isPolling || visuals?.status === "running" || visuals?.status === "pending";
+
+  function handleGenerateClick() {
+    console.log("[visual-ui] generate button clicked");
+    onGenerate();
+  }
 
   return (
     <div className="wizard-grid">
@@ -66,7 +72,7 @@ export const VisualReview: React.FC<VisualReviewProps> = ({
                     <img src={src} alt={act.title} />
                   ) : (
                     <div className="visual-empty">
-                      <span>Sin imagen aun</span>
+                      <span>{isGenerating ? "Generando visual..." : "Sin imagen aun"}</span>
                     </div>
                   )}
                 </div>
@@ -125,10 +131,10 @@ export const VisualReview: React.FC<VisualReviewProps> = ({
           <button
             type="button"
             className="ghost-button"
-            disabled={isPolling}
-            onClick={onGenerate}
+            disabled={isGenerating}
+            onClick={handleGenerateClick}
           >
-            {isPolling ? "Generando..." : "Generar visuales"}
+            {isGenerating ? "Generando..." : "Generar visuales"}
           </button>
           <button
             type="button"

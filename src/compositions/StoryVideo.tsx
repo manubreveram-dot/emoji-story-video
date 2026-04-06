@@ -1,6 +1,8 @@
 import React from "react";
 import { AbsoluteFill } from "remotion";
+import { staticFile } from "remotion";
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
+import { Audio } from "@remotion/media";
 import type { SceneBlueprint } from "../types/scene";
 import { TRANSITION_DURATION } from "../config/video";
 import { SceneRenderer } from "../scenes/SceneRenderer";
@@ -8,9 +10,28 @@ import { getTransitionPresentation } from "../animations/transitions";
 
 type StoryVideoProps = {
   scenes: SceneBlueprint[];
+  audioUrl?: string;
 };
 
-export const StoryVideo: React.FC<StoryVideoProps> = ({ scenes }) => {
+function resolveAudioSrc(src: string): string {
+  if (
+    src.startsWith("http://") ||
+    src.startsWith("https://") ||
+    src.startsWith("data:") ||
+    src.startsWith("/api/") ||
+    src.startsWith("/generated/")
+  ) {
+    return src;
+  }
+
+  if (src.startsWith("generated/")) {
+    return staticFile(src);
+  }
+
+  return staticFile(`generated/${src}`);
+}
+
+export const StoryVideo: React.FC<StoryVideoProps> = ({ scenes, audioUrl }) => {
   if (scenes.length === 0) {
     return (
       <AbsoluteFill
@@ -30,6 +51,7 @@ export const StoryVideo: React.FC<StoryVideoProps> = ({ scenes }) => {
 
   return (
     <AbsoluteFill>
+      {audioUrl ? <Audio src={resolveAudioSrc(audioUrl)} /> : null}
       <TransitionSeries>
         {scenes.map((scene, index) => (
           <React.Fragment key={index}>

@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 import type { SceneBlueprint } from "./scene";
 
 export const VideoInputSchema = z.object({
+  audioUrl: z.string().optional(),
   scenes: z.array(
     z.object({
       text: z.string(),
@@ -42,4 +43,5 @@ export const VideoInputSchema = z.object({
 
 export type VideoInputProps = {
   scenes: SceneBlueprint[];
+  audioUrl?: string;
 };

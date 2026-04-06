@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { API_CONFIG } from "../config/api";
 import type { ImageStyle, Script, ScriptScene } from "../types/script";
+import { getSceneTreatment } from "../shared/video-layout";
 import { buildDefaultActs, remapActs } from "./act-mapper";
 import { estimatePipelineCost, mergeCostEstimate } from "./cost-estimator";
 import { buildImagePromptV2, buildVeoPromptEnglish } from "./prompts/image-prompt-v2";
@@ -152,14 +153,9 @@ function toLegacyScript(
   lines: ScriptLineV2[],
 ): Script {
   const transitions: ScriptScene["transition"][] = ["fade", "slide", "wipe", "flip"];
-  const imageAnimations: ScriptScene["imageAnimation"][] = [
-    "ken-burns-in",
-    "ken-burns-out",
-    "parallax",
-    "zoom-pulse",
-  ];
 
   const scenes: ScriptScene[] = lines.map((line, index) => ({
+    ...getSceneTreatment(index, lines.length),
     id: `scene-${index + 1}`,
     order: index + 1,
     narration: line.narration,
@@ -167,13 +163,6 @@ function toLegacyScript(
     mood: line.mood,
     emojis: line.emojis,
     durationSeconds: line.durationSeconds,
-    layout:
-      index === 0 || index === lines.length - 1
-        ? "title"
-        : index % 3 === 0
-          ? "cinematic"
-          : "image-text",
-    imageAnimation: imageAnimations[index % imageAnimations.length],
     transition: transitions[index % transitions.length],
   }));
 
@@ -342,9 +331,6 @@ async function generateSingleActImage(
       aspectRatio: "9:16",
       outputMimeType: "image/png",
       includeRaiReason: true,
-      enhancePrompt: true,
-      seed: scriptPackage.styleBible.seedBase + act.order,
-      negativePrompt: scriptPackage.styleBible.negativePrompt,
     },
   });
 

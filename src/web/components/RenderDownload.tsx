@@ -55,7 +55,10 @@ export const RenderDownload: React.FC<RenderDownloadProps> = ({
           {hasPreview ? (
             <Player
               component={StoryVideo}
-              inputProps={{ scenes: previewScenes }}
+              inputProps={{
+                scenes: previewScenes,
+                audioUrl: renderPack?.narrationAudio?.path,
+              }}
               durationInFrames={Math.max(totalDuration, VIDEO_FPS)}
               compositionWidth={VIDEO_WIDTH}
               compositionHeight={VIDEO_HEIGHT}
@@ -85,6 +88,12 @@ export const RenderDownload: React.FC<RenderDownloadProps> = ({
                 href={downloadUrl(renderPack?.imageZip)}
               >
                 Descargar ZIP imagenes
+              </a>
+              <a
+                className={`download-link ${downloadUrl(renderPack?.narrationAudio) ? "" : "download-link-disabled"}`}
+                href={downloadUrl(renderPack?.narrationAudio)}
+              >
+                Descargar narracion WAV
               </a>
               <a
                 className={`download-link ${downloadUrl(renderPack?.heroVideo ?? visuals?.heroVideo) ? "" : "download-link-disabled"}`}

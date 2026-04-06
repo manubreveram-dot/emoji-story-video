@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { loadFont as loadInter } from "@remotion/google-fonts/Inter";
 import { loadFont as loadMontserrat } from "@remotion/google-fonts/Montserrat";
 import type { SceneBlueprint } from "../types/scene";
@@ -18,6 +18,8 @@ import type {
 } from "../types/workflow-v2";
 import { scriptToScenes } from "../ai/script-to-scenes";
 import type { ImageGenerationProgress } from "../ai/image-generator";
+import { createFallbackScriptDocument } from "../shared/fallback-v2";
+import { getSceneTreatment } from "../shared/video-layout";
 import { IdeaInput } from "./components/IdeaInput";
 import { ScriptEditor } from "./components/ScriptEditor";
 import { GenerationProgress } from "./components/GenerationProgress";
@@ -33,6 +35,22 @@ loadMontserrat("normal", { weights: ["400", "700"], subsets: ["latin"] });
 loadInter("normal", { weights: ["400", "700"], subsets: ["latin"] });
 
 type LegacyStep = "idea" | "script" | "generating" | "preview";
+type SavedSession = {
+  id: string;
+  step: WizardStepV2;
+  scriptDocument: ScriptDocumentV2;
+  visualPack: VisualPack | null;
+  renderPack: RenderPack | null;
+  savedAt: number;
+};
+type RecentSessionSummary = {
+  id: string;
+  title: string;
+  subtitle: string;
+  step: WizardStepV2;
+  savedAt: number;
+  status: "script" | "visuals" | "render";
+};
 
 type ViteEnv = ImportMeta & {
   readonly env?: {
@@ -48,6 +66,8 @@ const API_BASE = env.env?.VITE_API_BASE
 const ENABLE_V2_WIZARD = env.env?.VITE_ENABLE_V2_WIZARD !== "false";
 const DEFAULT_BUDGET_CAP = 0.5;
 const DEFAULT_STYLE = "cinematic spiritual realism";
+const SESSION_STORAGE_KEY = "emoji-story-video:v2:sessions";
+const MAX_SAVED_SESSIONS = 8;
 const DEFAULT_COST_BREAKDOWN: CostBreakdown = {
   scriptUsd: 0,
   imagesUsd: 0,
@@ -77,67 +97,97 @@ function safePromptFromTitle(title: string, fallback: string): string {
   return title.trim() || fallback;
 }
 
-function fallbackScriptFromIdea(
-  idea: string,
-  artStyle: string,
-  budgetCapUsd: number,
-  useVeo: boolean,
-): ScriptDocumentV2 {
-  const phrases = Array.from({ length: 10 }, (_, index) => ({
-    id: `phrase-${index + 1}`,
-    index,
-    text:
-      index === 0
-        ? `Inicio: ${idea}`
-        : index === 9
-          ? "Cierre con claridad y accion."
-          : `Frase ${index + 1} del video en desarrollo.`,
-    durationSeconds: 3,
-    mood: index % 2 === 0 ? "hopeful" : "peaceful",
-    emojis: index % 2 === 0 ? ["✨", "🧭"] : ["🌙", "🕊️"],
-  }));
-
-  const acts = [
-    { id: "act-1", index: 0, title: "Apertura", summary: "Arranque narrativo", phraseIndexes: [0, 1, 2], visualPrompt: idea },
-    { id: "act-2", index: 1, title: "Giro", summary: "Tension y contraste", phraseIndexes: [3, 4], visualPrompt: `Contrast for ${idea}` },
-    { id: "act-3", index: 2, title: "Profundidad", summary: "Desarrollo interior", phraseIndexes: [5, 6, 7], visualPrompt: `Inner depth for ${idea}` },
-    { id: "act-4", index: 3, title: "Cierre", summary: "Resolucion final", phraseIndexes: [8, 9], visualPrompt: `Closing frame for ${idea}` },
+function buildVisualProgressPlaceholder(): VisualPack["progress"] {
+  return [
+    { label: "Style Bible", status: "done" },
+    { label: "Image pack", status: "running", detail: "0/4" },
+    { label: "Veo hero", status: "pending" },
   ];
+}
 
+function buildRenderProgressPlaceholder(): RenderPack["progress"] {
+  return [
+    { label: "Collect assets", status: "done" },
+    { label: "Compose Remotion", status: "running" },
+    { label: "Export MP4", status: "pending" },
+  ];
+}
+
+function inferStepFromSession(session: {
+  scriptDocument: ScriptDocumentV2;
+  visualPack: VisualPack | null;
+  renderPack: RenderPack | null;
+}): WizardStepV2 {
+  if (session.renderPack) {
+    return "render-download";
+  }
+
+  if (session.visualPack) {
+    return "visual-review";
+  }
+
+  return session.scriptDocument ? "script-lab" : "idea";
+}
+
+function summarizeSession(session: SavedSession): RecentSessionSummary {
   return {
-    id: `draft-${Date.now()}`,
-    idea,
-    title: safePromptFromTitle(idea, "Nuevo video"),
-    targetDurationSeconds: 30,
-    budgetCapUsd,
-    useVeo,
-    estimatedCost: {
-      ...DEFAULT_COST_BREAKDOWN,
-      scriptUsd: 0.01,
-      imagesUsd: 0.08,
-      veoUsd: useVeo ? 0.4 : 0,
-      totalUsd: useVeo ? 0.49 : 0.09,
-    },
-    styleBible: {
-      artStyle,
-      palette: "warm neutrals + gold accents",
-      lighting: "soft cinematic rim light",
-      camera: "portrait 50mm close-up",
-      characterDescriptors: "same central subject across all acts",
-      negativePrompt: "text, letters, watermark, extra limbs, low detail",
-      seedBase: 4242,
-      consistencyNote: "Match wardrobe, face shape and atmosphere across all blocks.",
-    },
-    phrases,
-    acts,
-    featureFlags: {
-      legacyFallback: true,
-      veoEnabled: useVeo,
-    },
+    id: session.id,
+    title: session.scriptDocument.title || safePromptFromTitle(session.scriptDocument.idea, "Video sin titulo"),
+    subtitle: session.scriptDocument.idea,
+    step: session.step,
+    savedAt: session.savedAt,
+    status: session.renderPack
+      ? "render"
+      : session.visualPack
+        ? "visuals"
+        : "script",
   };
 }
 
+function readSavedSessions(): SavedSession[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as SavedSession[];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(
+      (session) =>
+        session &&
+        typeof session === "object" &&
+        typeof session.id === "string" &&
+        !!session.scriptDocument,
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedSessions(sessions: SavedSession[]): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessions));
+}
+
 function parseScriptDocument(payload: unknown, request: ScriptRequestV2): ScriptDocumentV2 {
+  const fallbackDocument = createFallbackScriptDocument(
+    request.idea,
+    request.artStyle,
+    request.budgetCapUsd,
+    request.useVeo,
+  );
+
   if (payload && typeof payload === "object" && "phrases" in payload && "acts" in payload) {
     const document = payload as Partial<ScriptDocumentV2>;
     return {
@@ -149,16 +199,16 @@ function parseScriptDocument(payload: unknown, request: ScriptRequestV2): Script
       useVeo: document.useVeo ?? request.useVeo,
       estimatedCost: document.estimatedCost ?? DEFAULT_COST_BREAKDOWN,
       actualCost: document.actualCost,
-      styleBible: document.styleBible ?? fallbackScriptFromIdea(request.idea, request.artStyle, request.budgetCapUsd, request.useVeo).styleBible,
-      phrases: document.phrases ?? fallbackScriptFromIdea(request.idea, request.artStyle, request.budgetCapUsd, request.useVeo).phrases,
-      acts: document.acts ?? fallbackScriptFromIdea(request.idea, request.artStyle, request.budgetCapUsd, request.useVeo).acts,
+      styleBible: document.styleBible ?? fallbackDocument.styleBible,
+      phrases: document.phrases ?? fallbackDocument.phrases,
+      acts: document.acts ?? fallbackDocument.acts,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
       featureFlags: document.featureFlags,
     };
   }
 
-  return fallbackScriptFromIdea(
+  return createFallbackScriptDocument(
     request.idea,
     request.artStyle,
     request.budgetCapUsd,
@@ -171,14 +221,7 @@ function toLegacyScript(document: ScriptDocumentV2): Script {
     const act =
       document.acts.find((candidate) => candidate.phraseIndexes.includes(index)) ??
       document.acts[Math.min(index, document.acts.length - 1)];
-
-    const layoutCycle: ScriptScene["layout"][] = [
-      "title",
-      "image-text",
-      "cinematic",
-      "image",
-      "text-emoji",
-    ];
+    const treatment = getSceneTreatment(index, document.phrases.length);
 
     return {
       id: phrase.id || `scene-${index + 1}`,
@@ -188,11 +231,8 @@ function toLegacyScript(document: ScriptDocumentV2): Script {
       mood: phrase.mood ?? (index % 2 === 0 ? "hopeful" : "peaceful"),
       emojis: phrase.emojis ?? [],
       durationSeconds: phrase.durationSeconds,
-      layout:
-        index === 0 || index === document.phrases.length - 1
-          ? "title"
-          : layoutCycle[index % layoutCycle.length],
-      imageAnimation: index % 2 === 0 ? "ken-burns-in" : "parallax",
+      layout: treatment.layout,
+      imageAnimation: treatment.imageAnimation,
       transition: index % 3 === 0 ? "fade" : index % 3 === 1 ? "slide" : "wipe",
     };
   });
@@ -218,7 +258,7 @@ function buildPreviewScenes(
 
   const imageByActIndex = new Map<number, string>();
   visuals?.images.forEach((image, index) => {
-    const imagePath = image.url ?? image.path;
+    const imagePath = image.path ? `generated/${image.path}` : image.url;
     if (imagePath) {
       imageByActIndex.set(image.actIndex ?? index, imagePath);
     }
@@ -377,6 +417,8 @@ export const App: React.FC = () => {
   const [step, setStep] = useState<WizardStepV2>("idea");
   const [error, setError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
+  const [recentSessions, setRecentSessions] = useState<RecentSessionSummary[]>([]);
+  const [pendingVisualAutostart, setPendingVisualAutostart] = useState(false);
 
   const [scriptDocument, setScriptDocument] = useState<ScriptDocumentV2 | null>(null);
   const [visualPack, setVisualPack] = useState<VisualPack | null>(null);
@@ -386,6 +428,213 @@ export const App: React.FC = () => {
     () => buildPreviewScenes(scriptDocument, visualPack),
     [scriptDocument, visualPack],
   );
+
+  useEffect(() => {
+    const savedSessions = readSavedSessions();
+    setRecentSessions(savedSessions.map(summarizeSession));
+
+    if (savedSessions.length === 0) {
+      return;
+    }
+
+    const latest = savedSessions[0];
+    setScriptDocument(latest.scriptDocument);
+    setVisualPack(latest.visualPack);
+    setRenderPack(latest.renderPack);
+    setStep(inferStepFromSession(latest));
+    setPendingVisualAutostart(false);
+  }, []);
+
+  useEffect(() => {
+    if (!scriptDocument) {
+      return;
+    }
+
+    const nextSession: SavedSession = {
+      id: scriptDocument.id,
+      step,
+      scriptDocument,
+      visualPack,
+      renderPack,
+      savedAt: Date.now(),
+    };
+
+    const existing = readSavedSessions().filter((session) => session.id !== nextSession.id);
+    const nextSessions = [nextSession, ...existing].slice(0, MAX_SAVED_SESSIONS);
+    writeSavedSessions(nextSessions);
+    setRecentSessions(nextSessions.map(summarizeSession));
+  }, [scriptDocument, visualPack, renderPack, step]);
+
+  useEffect(() => {
+    if (
+      !pendingVisualAutostart ||
+      step !== "visual-review" ||
+      !scriptDocument ||
+      visualPack
+    ) {
+      return;
+    }
+
+    console.log("[visual-ui] auto-starting visual generation", {
+      scriptId: scriptDocument.id,
+    });
+    setPendingVisualAutostart(false);
+    void createVisualJob();
+  }, [pendingVisualAutostart, step, scriptDocument, visualPack]);
+
+  useEffect(() => {
+    const activeJobId = visualPack?.jobId;
+    const activeStatus = visualPack?.status;
+
+    if (!activeJobId || (activeStatus !== "pending" && activeStatus !== "running")) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: number | undefined;
+
+    setIsWorking(true);
+    setPhase("visuals");
+
+    const pollVisualJob = async () => {
+      try {
+        const response = await fetch(apiUrl(`/api/visuals/v2/jobs/${activeJobId}`));
+        const data = await parseApiResponse<VisualPack>(response);
+
+        if (cancelled) {
+          return;
+        }
+
+        setVisualPack(data);
+
+        if (data.status === "done" || data.status === "error") {
+          setIsWorking(false);
+          setPhase("idle");
+
+          if (data.status === "error") {
+            setError(data.message ?? "No se pudo completar el visual pack.");
+          }
+          return;
+        }
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
+        setVisualPack((current) => {
+          if (!current || current.jobId !== activeJobId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            message: "Seguimos generando visuales. Reintentando sincronizacion...",
+          };
+        });
+      }
+
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollVisualJob, 2000);
+      }
+    };
+
+    void pollVisualJob();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [visualPack?.jobId, visualPack?.status]);
+
+  useEffect(() => {
+    const activeJobId = renderPack?.jobId;
+    const activeStatus = renderPack?.status;
+
+    if (!activeJobId || (activeStatus !== "pending" && activeStatus !== "running")) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: number | undefined;
+
+    setIsWorking(true);
+    setPhase("render");
+
+    const pollRenderJob = async () => {
+      try {
+        const response = await fetch(apiUrl(`/api/render/v2/jobs/${activeJobId}`));
+        const data = await parseApiResponse<RenderPack>(response);
+
+        if (cancelled) {
+          return;
+        }
+
+        setRenderPack(data);
+
+        if (data.status === "done" || data.status === "error") {
+          setIsWorking(false);
+          setPhase("idle");
+
+          if (data.status === "error") {
+            setError(data.message ?? "No se pudo renderizar el video final.");
+          }
+          return;
+        }
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        setRenderPack((current) => {
+          if (!current || current.jobId !== activeJobId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            message: "Seguimos renderizando. Reintentando sincronizacion...",
+          };
+        });
+      }
+
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollRenderJob, 2000);
+      }
+    };
+
+    void pollRenderJob();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [renderPack?.jobId, renderPack?.status]);
+
+  function restoreRecentSession(sessionId: string) {
+    const session = readSavedSessions().find((candidate) => candidate.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    setError(null);
+    setScriptDocument(session.scriptDocument);
+    setVisualPack(session.visualPack);
+    setRenderPack(session.renderPack);
+    setStep(inferStepFromSession(session));
+    setPendingVisualAutostart(false);
+  }
+
+  function clearRecentSessions() {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+
+    setRecentSessions([]);
+  }
 
   async function createScriptV2(payload: ScriptRequestV2) {
     setIsWorking(true);
@@ -433,6 +682,9 @@ export const App: React.FC = () => {
         ...document,
         ...data,
       });
+      setVisualPack(null);
+      setRenderPack(null);
+      setPendingVisualAutostart(true);
       setStep("visual-review");
     } catch (err) {
       setError(
@@ -448,6 +700,11 @@ export const App: React.FC = () => {
 
   async function createVisualJob(regenerateActIndex?: number) {
     if (!scriptDocument) return;
+
+    console.log("[visual-ui] createVisualJob called", {
+      scriptId: scriptDocument.id,
+      regenerateActIndex,
+    });
 
     setIsWorking(true);
     setPhase("visuals");
@@ -468,8 +725,12 @@ export const App: React.FC = () => {
         body: JSON.stringify(payload),
       });
 
+      console.log("[visual-ui] visual job response received", {
+        status: response.status,
+      });
+
       const startPayload = await parseApiResponse<
-        Partial<VisualPack> & { jobId?: string; id?: string }
+        Partial<VisualPack> & { jobId?: string; id?: string; warning?: string }
       >(response);
 
       const jobId = startPayload.jobId ?? startPayload.id;
@@ -477,25 +738,33 @@ export const App: React.FC = () => {
         throw new Error("Visual job did not return a valid job id.");
       }
 
-      const job = await pollJsonJob<VisualPack>(
-        `/api/visuals/v2/jobs/${jobId}`,
-        (data) => {
-          setVisualPack(data);
-          return data.status === "done" || data.status === "error";
-        },
-      );
-
-      setVisualPack(job);
-      if (job.status === "error") {
-        throw new Error(job.message ?? "Visual generation failed.");
-      }
+      setVisualPack({
+        jobId,
+        status: startPayload.status ?? "running",
+        message:
+          startPayload.message ??
+          startPayload.warning ??
+          (regenerateActIndex === undefined
+            ? "Generando 4 visuales consistentes..."
+            : `Regenerando el acto ${regenerateActIndex + 1}...`),
+        mode: startPayload.mode ?? visualPack?.mode ?? "economy",
+        consistencyScore: startPayload.consistencyScore ?? visualPack?.consistencyScore ?? 0,
+        progress: startPayload.progress ?? buildVisualProgressPlaceholder(),
+        images: startPayload.images ?? visualPack?.images ?? [],
+        heroVideo: startPayload.heroVideo ?? visualPack?.heroVideo,
+        imageZip: startPayload.imageZip ?? visualPack?.imageZip,
+        manifest: startPayload.manifest ?? visualPack?.manifest,
+        estimatedCost: startPayload.estimatedCost ?? scriptDocument.estimatedCost,
+        actualCost: startPayload.actualCost,
+        expiresAt: startPayload.expiresAt,
+      });
     } catch (err) {
+      console.error("[visual-ui] createVisualJob failed", err);
       setError(
         err instanceof Error
           ? err.message
           : "No se pudo completar el visual pack.",
       );
-    } finally {
       setIsWorking(false);
       setPhase("idle");
     }
@@ -531,23 +800,23 @@ export const App: React.FC = () => {
         throw new Error("Render job did not return a valid job id.");
       }
 
-      const job = await pollJsonJob<RenderPack>(
-        `/api/render/v2/jobs/${jobId}`,
-        (data) => {
-          setRenderPack(data);
-          return data.status === "done" || data.status === "error";
-        },
-      );
-
-      setRenderPack(job);
-      if (job.status === "error") {
-        throw new Error(job.message ?? "Render failed.");
-      }
+      setRenderPack({
+        jobId,
+        status: startPayload.status ?? "running",
+        message: startPayload.message ?? "Preparando render final...",
+        progress: startPayload.progress ?? buildRenderProgressPlaceholder(),
+        finalVideo: startPayload.finalVideo,
+        imageZip: startPayload.imageZip ?? visualPack.imageZip,
+        heroVideo: startPayload.heroVideo ?? visualPack.heroVideo,
+        manifest: startPayload.manifest,
+        estimatedCost: startPayload.estimatedCost ?? scriptDocument.estimatedCost,
+        actualCost: startPayload.actualCost,
+        expiresAt: startPayload.expiresAt,
+      });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "No se pudo renderizar el video final.",
       );
-    } finally {
       setIsWorking(false);
       setPhase("idle");
     }
@@ -658,8 +927,11 @@ export const App: React.FC = () => {
           initialStyle={scriptDocument?.styleBible.artStyle ?? DEFAULT_STYLE}
           initialBudgetCapUsd={scriptDocument?.budgetCapUsd ?? DEFAULT_BUDGET_CAP}
           initialUseVeo={scriptDocument?.useVeo ?? true}
+          recentSessions={recentSessions}
           isLoading={isWorking}
           onSubmit={createScriptV2}
+          onResumeSession={restoreRecentSession}
+          onClearSessions={clearRecentSessions}
         />
       ) : null}
 

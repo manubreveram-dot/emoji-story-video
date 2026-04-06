@@ -161,6 +161,14 @@ app.post("/api/visuals/v2/jobs", async (req, res) => {
     scriptId?: string;
     regenerateActIndex?: number;
   };
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      event: "visual.v2.request.received",
+      scriptId,
+      regenerateActIndex,
+    }),
+  );
   if (!scriptId) {
     res.status(400).json({ error: "scriptId is required" });
     return;

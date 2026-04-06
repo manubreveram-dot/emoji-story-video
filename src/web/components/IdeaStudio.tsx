@@ -14,6 +14,14 @@ type IdeaStudioProps = {
   initialStyle: string;
   initialBudgetCapUsd: number;
   initialUseVeo: boolean;
+  recentSessions: Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    step: "idea" | "script-lab" | "visual-review" | "render-download";
+    savedAt: number;
+    status: "script" | "visuals" | "render";
+  }>;
   isLoading: boolean;
   onSubmit: (payload: {
     idea: string;
@@ -21,6 +29,8 @@ type IdeaStudioProps = {
     budgetCapUsd: number;
     useVeo: boolean;
   }) => void;
+  onResumeSession: (sessionId: string) => void;
+  onClearSessions: () => void;
 };
 
 export const IdeaStudio: React.FC<IdeaStudioProps> = ({
@@ -28,8 +38,11 @@ export const IdeaStudio: React.FC<IdeaStudioProps> = ({
   initialStyle,
   initialBudgetCapUsd,
   initialUseVeo,
+  recentSessions,
   isLoading,
   onSubmit,
+  onResumeSession,
+  onClearSessions,
 }) => {
   const [idea, setIdea] = useState(initialIdea);
   const [artStyle, setArtStyle] = useState(initialStyle);
@@ -141,6 +154,44 @@ export const IdeaStudio: React.FC<IdeaStudioProps> = ({
         >
           {isLoading ? "Generando guion V2..." : "Generar script lab"}
         </button>
+
+        {recentSessions.length > 0 ? (
+          <div className="saved-sessions-card">
+            <div className="saved-sessions-header">
+              <div>
+                <p className="eyebrow">Recientes</p>
+                <strong>Recuperar sesiones guardadas</strong>
+              </div>
+              <button
+                type="button"
+                className="saved-session-clear"
+                onClick={onClearSessions}
+              >
+                Limpiar
+              </button>
+            </div>
+
+            <div className="saved-session-list">
+              {recentSessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  className="saved-session-item"
+                  onClick={() => onResumeSession(session.id)}
+                >
+                  <div className="saved-session-copy">
+                    <strong>{session.title}</strong>
+                    <span>{session.subtitle}</span>
+                  </div>
+                  <div className="saved-session-meta">
+                    <span>{session.status}</span>
+                    <small>{new Date(session.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </aside>
     </div>
   );

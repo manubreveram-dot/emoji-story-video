@@ -3,6 +3,9 @@ import path from "path";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import { API_CONFIG } from "../../config/api";
+import { createFallbackScriptDocument } from "../../shared/fallback-v2";
+import { getSceneTreatment } from "../../shared/video-layout";
+import { generateNarrationAudio } from "../../ai/tts-generator";
 import type { ImageStyle, Script, ScriptScene } from "../../types/script";
 import type {
   ActDraft,
@@ -80,7 +83,6 @@ const ASSET_TTL_MS = ASSET_TTL_MINUTES * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 let cleanupStarted = false;
-let bundleLocationPromise: Promise<string> | null = null;
 
 const CRC32_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -113,6 +115,42 @@ function makeId(prefix: string): string {
 
 function ensureDir(dirPath: string): void {
   fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function isMissingGeminiKeyError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("GEMINI_API_KEY not set");
+}
+
+function getContentType(filePath: string, fallback: string): string {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".svg":
+      return "image/svg+xml";
+    case ".json":
+      return "application/json";
+    case ".zip":
+      return "application/zip";
+    case ".mp4":
+      return "video/mp4";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    default:
+      return fallback;
+  }
 }
 
 function toPosixPath(value: string): string {
@@ -238,30 +276,18 @@ function lineForPhrase(
 }
 
 function toLegacyScript(document: ScriptDocumentV2): Script {
-  const layoutCycle: Array<ScriptScene["layout"]> = [
-    "title",
-    "image-text",
-    "cinematic",
-    "image",
-    "image-text",
-  ];
   const transitionCycle: Array<ScriptScene["transition"]> = [
     "fade",
     "slide",
     "wipe",
     "flip",
   ];
-  const animationCycle: Array<ScriptScene["imageAnimation"]> = [
-    "ken-burns-in",
-    "parallax",
-    "zoom-pulse",
-    "ken-burns-out",
-  ];
 
   const scenes = document.phrases.map((phrase, index) => {
     const act = document.acts.find((candidate) =>
       candidate.phraseIndexes.includes(index),
     );
+    const treatment = getSceneTreatment(index, document.phrases.length);
     return {
       id: `scene-${index + 1}`,
       order: index + 1,
@@ -270,11 +296,8 @@ function toLegacyScript(document: ScriptDocumentV2): Script {
       mood: phrase.mood,
       emojis: phrase.emojis,
       durationSeconds: phrase.durationSeconds,
-      layout:
-        index === 0 || index === document.phrases.length - 1
-          ? "title"
-          : layoutCycle[index % layoutCycle.length],
-      imageAnimation: animationCycle[index % animationCycle.length],
+      layout: treatment.layout,
+      imageAnimation: treatment.imageAnimation,
       transition:
         index === document.phrases.length - 1
           ? "fade"
@@ -387,6 +410,91 @@ function registerAsset(
 
   assets.set(id, entry);
   return withDownloadUrl(entry);
+}
+
+function writeOfflinePlaceholderImage(
+  outputDir: string,
+  act: ActDraft,
+  actIndex: number,
+  title: string,
+): string {
+  ensureDir(outputDir);
+  const filename = `${act.id}.svg`;
+  const filePath = path.join(outputDir, filename);
+  const palette = ["#1f2937", "#7c3aed", "#f59e0b", "#14b8a6"];
+  const accent = palette[actIndex % palette.length];
+  const subtitle = `${title} - Acto ${actIndex + 1}`;
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="${accent}" />
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)" />
+  <circle cx="860" cy="320" r="220" fill="rgba(255,255,255,0.12)" />
+  <circle cx="240" cy="1500" r="300" fill="rgba(255,255,255,0.08)" />
+  <rect x="96" y="160" width="888" height="1600" rx="56" fill="rgba(15,23,42,0.45)" stroke="rgba(255,255,255,0.2)" />
+  <text x="140" y="280" fill="#f8fafc" font-size="44" font-family="Arial, sans-serif">Offline preview</text>
+  <text x="140" y="360" fill="#e2e8f0" font-size="64" font-weight="700" font-family="Arial, sans-serif">${escapeXml(
+    subtitle,
+  )}</text>
+  <foreignObject x="140" y="460" width="800" height="360">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; color: white; font-size: 44px; line-height: 1.3;">
+      ${escapeXml(act.summary)}
+    </div>
+  </foreignObject>
+  <foreignObject x="140" y="920" width="800" height="520">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; color: #e2e8f0; font-size: 34px; line-height: 1.45;">
+      ${escapeXml(act.visualPrompt)}
+    </div>
+  </foreignObject>
+  <text x="140" y="1690" fill="#fde68a" font-size="30" font-family="Arial, sans-serif">Generated without Gemini credentials to unblock local desktop debugging.</text>
+</svg>`;
+
+  fs.writeFileSync(filePath, svg, "utf8");
+  return filename;
+}
+
+function createOfflineVisualPackage(
+  scriptRecord: ScriptRecord,
+  outputDir: string,
+): VisualPackageV2 {
+  const images = scriptRecord.document.acts.map((act, actIndex) => ({
+    actId: act.id,
+    filename: writeOfflinePlaceholderImage(
+      outputDir,
+      act,
+      actIndex,
+      scriptRecord.document.title,
+    ),
+    prompt: act.visualPrompt,
+    model: "offline-placeholder",
+  }));
+
+  return {
+    script: scriptRecord.packageV2,
+    styleBible: scriptRecord.packageV2.styleBible,
+    images,
+    heroClip: {
+      enabled: false,
+      skippedReason: "Offline preview mode enabled because GEMINI_API_KEY is missing.",
+    },
+    costEstimate: {
+      scriptUsd: 0,
+      imagesUsd: 0,
+      veoUsd: 0,
+      renderUsd: 0,
+      totalUsd: 0,
+      capUsd: scriptRecord.document.budgetCapUsd,
+      withinCap: true,
+      veoAllowed: false,
+      fallbackReason:
+        "Offline preview mode enabled because GEMINI_API_KEY is missing.",
+    },
+  };
 }
 
 function crc32(data: Buffer): number {
@@ -523,14 +631,11 @@ function buildVisualProgress(
   ];
 }
 
-function getOrCreateBundleLocation(): Promise<string> {
-  if (!bundleLocationPromise) {
-    bundleLocationPromise = bundle({
-      entryPoint: BUNDLE_ENTRYPOINT,
-      webpackOverride: (config) => config,
-    });
-  }
-  return bundleLocationPromise;
+function createBundleLocation(): Promise<string> {
+  return bundle({
+    entryPoint: BUNDLE_ENTRYPOINT,
+    webpackOverride: (config) => config,
+  });
 }
 
 function normalizeVisualPack(pack: VisualPack): VisualPack {
@@ -547,6 +652,9 @@ function normalizeRenderPack(pack: RenderPack): RenderPack {
   return {
     ...pack,
     finalVideo: pack.finalVideo ? withDownloadUrl(pack.finalVideo) : undefined,
+    narrationAudio: pack.narrationAudio
+      ? withDownloadUrl(pack.narrationAudio)
+      : undefined,
     imageZip: pack.imageZip ? withDownloadUrl(pack.imageZip) : undefined,
     heroVideo: pack.heroVideo ? withDownloadUrl(pack.heroVideo) : undefined,
     manifest: pack.manifest ? withDownloadUrl(pack.manifest) : undefined,
@@ -600,16 +708,33 @@ export async function createScriptDraft(
 ): Promise<ScriptDocumentV2> {
   const budgetCapUsd = options.costCapUsd ?? API_CONFIG.costs.capUsdDefault;
   const useVeo = options.useVeo ?? API_CONFIG.veo.enabledDefault;
-  const scriptPackage = await generateScriptV2(
-    options.idea,
-    options.artStyle || "cinematic spiritual realism",
-    {
-      costCapUsd: budgetCapUsd,
-      includeVeo: useVeo,
-    },
-  );
+  let document: ScriptDocumentV2;
+  let scriptPackage: ScriptPackageV2;
 
-  const document = scriptPackageToDocument(scriptPackage, budgetCapUsd, useVeo);
+  try {
+    scriptPackage = await generateScriptV2(
+      options.idea,
+      options.artStyle || "cinematic spiritual realism",
+      {
+        costCapUsd: budgetCapUsd,
+        includeVeo: useVeo,
+      },
+    );
+    document = scriptPackageToDocument(scriptPackage, budgetCapUsd, useVeo);
+  } catch (error) {
+    if (!isMissingGeminiKeyError(error)) {
+      throw error;
+    }
+
+    document = createFallbackScriptDocument(
+      options.idea,
+      options.artStyle || "cinematic spiritual realism",
+      budgetCapUsd,
+      useVeo,
+    );
+    scriptPackage = documentToScriptPackage(document);
+  }
+
   const record: ScriptRecord = {
     id: document.id,
     document,
@@ -733,20 +858,32 @@ async function runVisualJob(jobId: string): Promise<void> {
     const outputDir = path.join(PUBLIC_GENERATED_ROOT, "v2", jobId);
     ensureDir(outputDir);
 
-    const visualPackage: VisualPackageV2 = await generateImagePackV2(
-      scriptRecord.packageV2,
-      {
-        outputDir,
-        costCapUsd: scriptRecord.document.budgetCapUsd,
-        useVeo: scriptRecord.document.useVeo,
-      },
-    );
+    let visualPackage: VisualPackageV2;
+    try {
+      visualPackage = await generateImagePackV2(
+        scriptRecord.packageV2,
+        {
+          outputDir,
+          costCapUsd: scriptRecord.document.budgetCapUsd,
+          useVeo: scriptRecord.document.useVeo,
+        },
+      );
+    } catch (error) {
+      if (!isMissingGeminiKeyError(error)) {
+        throw error;
+      }
+
+      visualPackage = createOfflineVisualPackage(scriptRecord, outputDir);
+    }
 
     const imageAssets = visualPackage.images.map((image, index) =>
       registerAsset({
         kind: "image",
         filename: image.filename,
-        contentType: "image/png",
+        contentType: getContentType(
+          path.join(outputDir, image.filename),
+          "image/png",
+        ),
         filePath: path.join(outputDir, image.filename),
         actIndex: index,
       }),
@@ -870,6 +1007,7 @@ export async function createRenderJob(
     message: "Render job queued.",
     progress: [
       { label: "Collect assets", status: "pending" },
+      { label: "Narration", status: "pending" },
       { label: "Compose Remotion", status: "pending" },
       { label: "Export MP4", status: "pending" },
     ],
@@ -913,6 +1051,7 @@ async function runRenderJob(jobId: string): Promise<void> {
   renderRecord.pack.status = "running";
   renderRecord.pack.progress = [
     { label: "Collect assets", status: "running" },
+    { label: "Narration", status: "pending" },
     { label: "Compose Remotion", status: "pending" },
     { label: "Export MP4", status: "pending" },
   ];
@@ -939,20 +1078,73 @@ async function runRenderJob(jobId: string): Promise<void> {
     });
 
     const scenes = scriptToScenes(legacyScript, imagePaths);
+    let narrationAudio: GeneratedAsset | undefined;
 
     renderRecord.pack.progress = [
       { label: "Collect assets", status: "done" },
+      { label: "Narration", status: "running" },
+      { label: "Compose Remotion", status: "running" },
+      { label: "Export MP4", status: "pending" },
+    ];
+    renderRecord.pack.message = "Preparing narration...";
+    renderRecord.updatedAt = now();
+
+    try {
+      const narrationDir = path.join(PUBLIC_GENERATED_ROOT, "renders", jobId);
+      const narrationResult = await generateNarrationAudio(
+        scriptRecord.document,
+        narrationDir,
+      );
+
+      if (narrationResult) {
+        narrationAudio = registerAsset({
+          kind: "audio",
+          filename: narrationResult.filename,
+          contentType: narrationResult.contentType,
+          filePath: narrationResult.filePath,
+        });
+        logJobEvent("audio.v2.done", {
+          jobId,
+          scriptId: renderRecord.scriptId,
+          model: narrationResult.model,
+          assetId: narrationAudio.id,
+        });
+      } else {
+        logJobEvent("audio.v2.skipped", {
+          jobId,
+          scriptId: renderRecord.scriptId,
+          reason: "TTS disabled or missing Gemini API key.",
+        });
+      }
+    } catch (error) {
+      logJobEvent("audio.v2.error", {
+        jobId,
+        scriptId: renderRecord.scriptId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const bundleLocation = await createBundleLocation();
+    renderRecord.pack.progress = [
+      { label: "Collect assets", status: "done" },
+      {
+        label: "Narration",
+        status: narrationAudio ? "done" : "pending",
+        detail: narrationAudio ? "Gemini TTS ready" : "Skipped",
+      },
       { label: "Compose Remotion", status: "running" },
       { label: "Export MP4", status: "pending" },
     ];
     renderRecord.pack.message = "Bundling composition...";
     renderRecord.updatedAt = now();
 
-    const bundleLocation = await getOrCreateBundleLocation();
     const composition = await selectComposition({
       serveUrl: bundleLocation,
       id: "EmojiStoryVideo",
-      inputProps: { scenes },
+      inputProps: {
+        scenes,
+        audioUrl: narrationAudio?.path,
+      },
     });
 
     const outputDir = path.join(OUTPUT_ROOT, "renders", jobId);
@@ -961,6 +1153,11 @@ async function runRenderJob(jobId: string): Promise<void> {
 
     renderRecord.pack.progress = [
       { label: "Collect assets", status: "done" },
+      {
+        label: "Narration",
+        status: narrationAudio ? "done" : "pending",
+        detail: narrationAudio ? "Gemini TTS ready" : "Skipped",
+      },
       { label: "Compose Remotion", status: "done" },
       { label: "Export MP4", status: "running" },
     ];
@@ -972,7 +1169,10 @@ async function runRenderJob(jobId: string): Promise<void> {
       serveUrl: bundleLocation,
       codec: "h264",
       outputLocation: outputFile,
-      inputProps: { scenes },
+      inputProps: {
+        scenes,
+        audioUrl: narrationAudio?.path,
+      },
       crf: 20,
     });
 
@@ -1001,6 +1201,7 @@ async function runRenderJob(jobId: string): Promise<void> {
       renderJobId: jobId,
       createdAt: now(),
       finalVideo: finalVideo.id,
+      narrationAudio: narrationAudio?.id,
       imageZip: visualRecord.pack.imageZip?.id,
       heroVideo: visualRecord.pack.heroVideo?.id,
       cost: actualCost,
@@ -1012,10 +1213,16 @@ async function runRenderJob(jobId: string): Promise<void> {
       message: "Render complete. Files ready to download.",
       progress: [
         { label: "Collect assets", status: "done" },
+        {
+          label: "Narration",
+          status: narrationAudio ? "done" : "pending",
+          detail: narrationAudio ? "Gemini TTS ready" : "Skipped",
+        },
         { label: "Compose Remotion", status: "done" },
         { label: "Export MP4", status: "done" },
       ],
       finalVideo,
+      narrationAudio,
       imageZip: visualRecord.pack.imageZip,
       heroVideo: visualRecord.pack.heroVideo,
       manifest,
@@ -1038,6 +1245,10 @@ async function runRenderJob(jobId: string): Promise<void> {
       error instanceof Error ? error.message : "Render failed.";
     renderRecord.pack.progress = [
       { label: "Collect assets", status: "done" },
+      {
+        label: "Narration",
+        status: renderRecord.pack.narrationAudio ? "done" : "pending",
+      },
       { label: "Compose Remotion", status: "error" },
       { label: "Export MP4", status: "pending" },
     ];

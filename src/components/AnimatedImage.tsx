@@ -11,6 +11,24 @@ type AnimatedImageProps = {
   animation: ImageAnimation;
 };
 
+function resolveImageSrc(src: string): string {
+  if (
+    src.startsWith("http://") ||
+    src.startsWith("https://") ||
+    src.startsWith("data:") ||
+    src.startsWith("/api/") ||
+    src.startsWith("/generated/")
+  ) {
+    return src;
+  }
+
+  if (src.startsWith("generated/")) {
+    return staticFile(src);
+  }
+
+  return staticFile(`generated/${src}`);
+}
+
 export const AnimatedImage: React.FC<AnimatedImageProps> = ({
   src,
   animation,
@@ -54,7 +72,7 @@ export const AnimatedImage: React.FC<AnimatedImageProps> = ({
       }}
     >
       <Img
-        src={staticFile(`generated/${src}`)}
+        src={resolveImageSrc(src)}
         style={{
           width: "100%",
           height: "100%",
