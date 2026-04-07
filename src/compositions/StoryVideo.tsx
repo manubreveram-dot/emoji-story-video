@@ -1,8 +1,6 @@
 import React from "react";
-import { AbsoluteFill } from "remotion";
-import { staticFile } from "remotion";
+import { AbsoluteFill, Audio, staticFile } from "remotion";
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
-import { Audio } from "@remotion/media";
 import type { SceneBlueprint } from "../types/scene";
 import { TRANSITION_DURATION } from "../config/video";
 import { SceneRenderer } from "../scenes/SceneRenderer";
