@@ -38,13 +38,32 @@ type RawScriptV2Response = {
   }>;
 };
 
-function extractJson(text: string): string {
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error("Failed to parse JSON from Gemini response");
+function parseModelJson<T>(text: string): T {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("Gemini devolvio una respuesta vacia.");
   }
 
-  return jsonMatch[0];
+  const candidates: string[] = [trimmed];
+  const fenced = trimmed.match(/```json\s*([\s\S]*?)```/i)?.[1];
+  if (fenced) {
+    candidates.push(fenced.trim());
+  }
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate) as T;
+    } catch {
+      // Intentional no-op: try next candidate.
+    }
+  }
+
+  throw new Error("No fue posible parsear JSON valido desde la respuesta del modelo.");
 }
 
 function createGeminiClient(): GoogleGenAI {
@@ -98,33 +117,37 @@ function normalizeDuration(lines: ScriptLineV2[]): ScriptLineV2[] {
   return adjusted;
 }
 
-function buildQualityRubric(lines: ScriptLineV2[], styleBible: StyleBible): QualityRubricResult {
+function buildQualityRubric(
+  lines: ScriptLineV2[],
+  styleBible: StyleBible,
+  targetLineCount: number,
+): QualityRubricResult {
   const issues: string[] = [];
 
-  if (lines.length !== API_CONFIG.pipelineV2.targetLineCount) {
-    issues.push(`Expected 10 lines, got ${lines.length}.`);
+  if (lines.length !== targetLineCount) {
+    issues.push(`Se esperaban ${targetLineCount} lineas y llegaron ${lines.length}.`);
   }
 
   const totalDuration = lines.reduce((sum, line) => sum + line.durationSeconds, 0);
   if (totalDuration !== API_CONFIG.pipelineV2.targetDurationSeconds) {
     issues.push(
-      `Expected ${API_CONFIG.pipelineV2.targetDurationSeconds}s total, got ${totalDuration}s.`,
+      `La duracion total esperada era ${API_CONFIG.pipelineV2.targetDurationSeconds}s y llego ${totalDuration}s.`,
     );
   }
 
   if (!styleBible.characterDescriptors.trim()) {
-    issues.push("Style bible must include stable character descriptors.");
+    issues.push("La guia visual debe incluir descriptores estables del protagonista.");
   }
 
   if (!styleBible.negativePrompt.trim()) {
-    issues.push("Style bible must include a negative prompt.");
+    issues.push("La guia visual debe incluir un negative prompt.");
   }
 
   const tooLongLines = lines.filter(
     (line) => line.narration.trim().split(/\s+/).length > 12,
   );
   if (tooLongLines.length > 0) {
-    issues.push("Some narration lines exceed 12 words.");
+    issues.push("Hay lineas de narracion con mas de 12 palabras.");
   }
 
   return {
@@ -145,6 +168,22 @@ function toScriptLines(rawLines: RawScriptV2Response["lines"]): ScriptLineV2[] {
     durationSeconds: Math.max(2, Math.round(line.durationSeconds)),
     visualIntent: line.visualIntent.trim(),
   }));
+}
+
+function buildDynamicActGroups(lineCount: number): Array<[number, number]> {
+  const ratios = [0, 0.3, 0.5, 0.8, 1];
+  const groups: Array<[number, number]> = [];
+  let start = 1;
+
+  for (let index = 0; index < 4; index++) {
+    const ratioEnd = ratios[index + 1] ?? 1;
+    const maxEnd = Math.max(start, Math.round(lineCount * ratioEnd));
+    const end = index === 3 ? lineCount : Math.min(lineCount, maxEnd);
+    groups.push([start, end]);
+    start = Math.min(lineCount, end + 1);
+  }
+
+  return groups;
 }
 
 function toLegacyScript(
@@ -177,14 +216,28 @@ function toLegacyScript(
 function toStyleBible(
   artStyle: string,
   rawStyleBible: RawScriptV2Response["styleBible"],
+  idea: string,
 ): StyleBible {
+  const ideaKeywords = idea
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => token.length >= 4)
+    .slice(0, 8)
+    .join(", ");
+
+  const negativePromptBase = rawStyleBible.negativePrompt.trim();
+  const requiredNegative =
+    "piel plastica, manos deformes, ojos irreales, texto en imagen, watermark, artefactos IA";
+
   return {
     artStyle,
-    palette: rawStyleBible.palette.trim(),
+    palette: `${rawStyleBible.palette.trim()} | contexto: ${ideaKeywords}`,
     lighting: rawStyleBible.lighting.trim(),
     camera: rawStyleBible.camera.trim(),
-    characterDescriptors: rawStyleBible.characterDescriptors.trim(),
-    negativePrompt: rawStyleBible.negativePrompt.trim(),
+    characterDescriptors: `${rawStyleBible.characterDescriptors.trim()} | referencia narrativa: ${idea.slice(0, 220)}`,
+    negativePrompt: negativePromptBase.includes("artefactos")
+      ? negativePromptBase
+      : `${negativePromptBase}, ${requiredNegative}`,
     seedBase: Math.max(1, Math.round(rawStyleBible.seedBase)),
   };
 }
@@ -194,11 +247,12 @@ function buildScriptPackage(
   payload: RawScriptV2Response,
   attempts: number,
   costEstimate: PhaseCostEstimate,
+  targetLineCount: number,
   actGroups?: Array<[number, number]>,
 ): ScriptPackageV2 {
   const normalizedLines = normalizeDuration(toScriptLines(payload.lines));
-  const styleBible = toStyleBible(payload.style.artStyle, payload.styleBible);
-  const quality = buildQualityRubric(normalizedLines, styleBible);
+  const styleBible = toStyleBible(payload.style.artStyle, payload.styleBible, idea);
+  const quality = buildQualityRubric(normalizedLines, styleBible, targetLineCount);
   quality.attempts = attempts;
   const acts = actGroups
     ? remapActs(normalizedLines, actGroups)
@@ -225,12 +279,14 @@ async function generateScriptAttempt(
   ai: GoogleGenAI,
   idea: string,
   artStyle: string,
+  targetLineCount: number,
 ): Promise<RawScriptV2Response> {
   const response = await ai.models.generateContent({
     model: API_CONFIG.gemini.scriptModelV2,
     contents: buildScriptPromptV2(
       idea,
       artStyle,
+      targetLineCount,
       API_CONFIG.pipelineV2.targetDurationSeconds,
     ),
     config: {
@@ -238,29 +294,46 @@ async function generateScriptAttempt(
     },
   });
 
-  return JSON.parse(extractJson(response.text ?? "")) as RawScriptV2Response;
+  return parseModelJson<RawScriptV2Response>(response.text ?? "");
 }
 
 export async function generateScriptV2(
   idea: string,
-  artStyle = "3d digital art",
+  artStyle = "realismo fotografico cinematografico",
   options?: GenerateScriptV2Options,
 ): Promise<ScriptPackageV2> {
   const ai = createGeminiClient();
+  const targetLineCount = Math.min(
+    API_CONFIG.pipelineV2.maxLineCount,
+    Math.max(
+      API_CONFIG.pipelineV2.minLineCount,
+      Math.round(options?.lineCount ?? API_CONFIG.pipelineV2.defaultLineCount),
+    ),
+  );
   const baseEstimate = estimatePipelineCost({
     includeVeo: options?.includeVeo ?? API_CONFIG.veo.enabledDefault,
     capUsd: options?.costCapUsd,
   });
+  const actGroups =
+    options?.actGroups && options.actGroups.length > 0
+      ? options.actGroups
+      : buildDynamicActGroups(targetLineCount);
 
   let lastPackage: ScriptPackageV2 | null = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const payload = await generateScriptAttempt(ai, idea, artStyle);
+    const payload = await generateScriptAttempt(
+      ai,
+      idea,
+      artStyle,
+      targetLineCount,
+    );
     const scriptPackage = buildScriptPackage(
       idea,
       payload,
       attempt,
       baseEstimate,
-      options?.actGroups,
+      targetLineCount,
+      actGroups,
     );
 
     lastPackage = scriptPackage;

@@ -17,13 +17,8 @@ import type {
   WizardStepV2,
 } from "../types/workflow-v2";
 import { scriptToScenes } from "../ai/script-to-scenes";
-import type { ImageGenerationProgress } from "../ai/image-generator";
 import { createFallbackScriptDocument } from "../shared/fallback-v2";
 import { getSceneTreatment } from "../shared/video-layout";
-import { IdeaInput } from "./components/IdeaInput";
-import { ScriptEditor } from "./components/ScriptEditor";
-import { GenerationProgress } from "./components/GenerationProgress";
-import { PreviewPlayer } from "./components/PreviewPlayer";
 import { IdeaStudio } from "./components/IdeaStudio";
 import { JobProgressList } from "./components/JobProgressList";
 import { RenderDownload } from "./components/RenderDownload";
@@ -34,7 +29,6 @@ import { WizardShell } from "./components/WizardShell";
 loadMontserrat("normal", { weights: ["400", "700"], subsets: ["latin"] });
 loadInter("normal", { weights: ["400", "700"], subsets: ["latin"] });
 
-type LegacyStep = "idea" | "script" | "generating" | "preview";
 type SavedSession = {
   id: string;
   step: WizardStepV2;
@@ -55,7 +49,6 @@ type RecentSessionSummary = {
 type ViteEnv = ImportMeta & {
   readonly env?: {
     readonly VITE_API_BASE?: string;
-    readonly VITE_ENABLE_V2_WIZARD?: string;
   };
 };
 
@@ -63,9 +56,9 @@ const env = import.meta as ViteEnv;
 const API_BASE = env.env?.VITE_API_BASE
   ? env.env.VITE_API_BASE.replace(/\/$/, "")
   : "";
-const ENABLE_V2_WIZARD = env.env?.VITE_ENABLE_V2_WIZARD !== "false";
 const DEFAULT_BUDGET_CAP = 0.5;
-const DEFAULT_STYLE = "cinematic spiritual realism";
+const DEFAULT_PHRASE_COUNT = 10;
+const DEFAULT_STYLE = "realismo fotografico cinematografico";
 const SESSION_STORAGE_KEY = "emoji-story-video:v2:sessions";
 const MAX_SAVED_SESSIONS = 8;
 const DEFAULT_COST_BREAKDOWN: CostBreakdown = {
@@ -80,36 +73,72 @@ function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function parseApiResponse<T>(response: Response): Promise<T> {
-  const data = (await response.json()) as T & { error?: string; message?: string };
-  if (!response.ok) {
-    throw new Error(data.error ?? data.message ?? "Unexpected API error");
+  const raw = await response.text();
+  const contentType = response.headers.get("content-type") ?? "";
+  const expectsJson = contentType.includes("application/json");
+  let parsedJson = false;
+  let data: T & { error?: string; message?: string };
+  try {
+    data = raw.length > 0
+      ? (JSON.parse(raw) as T & { error?: string; message?: string })
+      : ({} as T & { error?: string; message?: string });
+    parsedJson = raw.length > 0;
+  } catch {
+    data = {} as T & { error?: string; message?: string };
   }
 
-  return data;
+  if (response.ok && raw.trim().length > 0 && !parsedJson) {
+    throw new Error("La API devolvio una respuesta invalida. Revisa si el backend esta activo.");
+  }
+
+  if (!response.ok) {
+    const nonJsonMessage = expectsJson
+      ? undefined
+      : `La API respondio ${response.status}. Revisa los logs del backend.`;
+    throw new Error(
+      data.error ??
+      data.message ??
+      nonJsonMessage ??
+      (raw.trim() ? raw : "Error inesperado en la API."),
+    );
+  }
+
+  return data as T;
 }
 
 function safePromptFromTitle(title: string, fallback: string): string {
   return title.trim() || fallback;
 }
 
+function mergePrompt(basePrompt: string, presetPrompt: string): string {
+  const base = basePrompt.trim();
+  const preset = presetPrompt.trim();
+  if (!preset) {
+    return basePrompt;
+  }
+  if (!base) {
+    return preset;
+  }
+  if (base.toLowerCase().includes(preset.toLowerCase())) {
+    return base;
+  }
+  return `${base}, ${preset}`;
+}
+
 function buildVisualProgressPlaceholder(): VisualPack["progress"] {
   return [
-    { label: "Style Bible", status: "done" },
-    { label: "Image pack", status: "running", detail: "0/4" },
-    { label: "Veo hero", status: "pending" },
+    { label: "Guia visual", status: "done" },
+    { label: "Paquete de imagenes", status: "running", detail: "0/4" },
+    { label: "Clip hero", status: "pending" },
   ];
 }
 
 function buildRenderProgressPlaceholder(): RenderPack["progress"] {
   return [
-    { label: "Collect assets", status: "done" },
-    { label: "Compose Remotion", status: "running" },
-    { label: "Export MP4", status: "pending" },
+    { label: "Recolectar assets", status: "done" },
+    { label: "Componer video", status: "running" },
+    { label: "Exportar MP4", status: "pending" },
   ];
 }
 
@@ -186,6 +215,7 @@ function parseScriptDocument(payload: unknown, request: ScriptRequestV2): Script
     request.artStyle,
     request.budgetCapUsd,
     request.useVeo,
+    request.phraseCount,
   );
 
   if (payload && typeof payload === "object" && "phrases" in payload && "acts" in payload) {
@@ -195,6 +225,10 @@ function parseScriptDocument(payload: unknown, request: ScriptRequestV2): Script
       idea: document.idea ?? request.idea,
       title: document.title ?? safePromptFromTitle(request.idea, "Nuevo video"),
       targetDurationSeconds: document.targetDurationSeconds ?? 30,
+      phraseCount:
+        document.phraseCount ??
+        document.phrases?.length ??
+        request.phraseCount,
       budgetCapUsd: document.budgetCapUsd ?? request.budgetCapUsd,
       useVeo: document.useVeo ?? request.useVeo,
       estimatedCost: document.estimatedCost ?? DEFAULT_COST_BREAKDOWN,
@@ -213,10 +247,23 @@ function parseScriptDocument(payload: unknown, request: ScriptRequestV2): Script
     request.artStyle,
     request.budgetCapUsd,
     request.useVeo,
+    request.phraseCount,
   );
 }
 
-function toLegacyScript(document: ScriptDocumentV2): Script {
+function withPhraseCount(document: ScriptDocumentV2): ScriptDocumentV2 {
+  const phraseCount = document.phraseCount ?? document.phrases.length;
+  if (phraseCount === document.phraseCount) {
+    return document;
+  }
+
+  return {
+    ...document,
+    phraseCount,
+  };
+}
+
+function toPreviewScript(document: ScriptDocumentV2): Script {
   const scenes: ScriptScene[] = document.phrases.map((phrase, index) => {
     const act =
       document.acts.find((candidate) => candidate.phraseIndexes.includes(index)) ??
@@ -264,161 +311,22 @@ function buildPreviewScenes(
     }
   });
 
-  const legacyScript = toLegacyScript(document);
+  const previewScript = toPreviewScript(document);
   const imagePaths = document.phrases.map((_, phraseIndex) => {
     const actIndex =
       document.acts.findIndex((act) => act.phraseIndexes.includes(phraseIndex));
     return imageByActIndex.get(actIndex >= 0 ? actIndex : 0) ?? "";
   });
 
-  return scriptToScenes(legacyScript, imagePaths);
+  return scriptToScenes(previewScript, imagePaths);
 }
-
-async function pollJsonJob<T extends { status?: string }>(
-  path: string,
-  isComplete: (payload: T) => boolean,
-  maxAttempts = 90,
-): Promise<T> {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const response = await fetch(apiUrl(path));
-    const payload = await parseApiResponse<T>(response);
-    if (isComplete(payload)) {
-      return payload;
-    }
-    await sleep(2000);
-  }
-
-  throw new Error("Timed out waiting for async job completion.");
-}
-
-const LegacyExperience: React.FC = () => {
-  const [step, setStep] = useState<LegacyStep>("idea");
-  const [isLoading, setIsLoading] = useState(false);
-  const [script, setScript] = useState<Script | null>(null);
-  const [scenes, setScenes] = useState<SceneBlueprint[]>([]);
-  const [imageProgress, setImageProgress] = useState<ImageGenerationProgress[]>([]);
-  const [idea, setIdea] = useState("");
-  const [artStyle, setArtStyle] = useState(DEFAULT_STYLE);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleGenerateScript(newIdea: string, style: string) {
-    setIdea(newIdea);
-    setArtStyle(style);
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch(apiUrl("/api/script"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: newIdea, artStyle: style }),
-      });
-
-      const result = await parseApiResponse<Script>(res);
-      setScript(result);
-      setStep("script");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate script");
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  function handleUpdateScene(index: number, updatedScene: ScriptScene) {
-    if (!script) return;
-    const newScenes = [...script.scenes];
-    newScenes[index] = updatedScene;
-    setScript({ ...script, scenes: newScenes });
-  }
-
-  async function handleApproveScript(skipImages = false) {
-    if (!script) return;
-
-    if (skipImages) {
-      setScenes(scriptToScenes(script, script.scenes.map(() => "")));
-      setStep("preview");
-      return;
-    }
-
-    setStep("generating");
-    setImageProgress(
-      script.scenes.map((scene) => ({ sceneId: scene.id, status: "pending" as const })),
-    );
-
-    try {
-      const startRes = await fetch(apiUrl("/api/images"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ script }),
-      });
-
-      const { jobId } = await parseApiResponse<{ jobId: string }>(startRes);
-      const job = await pollJsonJob<{
-        status: string;
-        progress: ImageGenerationProgress[];
-        imagePaths: string[];
-        error?: string;
-      }>(`/api/images/${jobId}`, (payload) => {
-        setImageProgress(payload.progress ?? []);
-        return payload.status === "done" || payload.status === "error";
-      });
-
-      if (job.status === "error") {
-        throw new Error(job.error ?? "Image generation failed");
-      }
-
-      setScenes(scriptToScenes(script, job.imagePaths));
-      setStep("preview");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Image generation failed");
-      setStep("script");
-    }
-  }
-
-  return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#0a0a1a", color: "#e0e0e0" }}>
-      {error ? <div className="legacy-error-banner">{error}</div> : null}
-      {step === "idea" ? (
-        <IdeaInput onGenerate={handleGenerateScript} isLoading={isLoading} />
-      ) : null}
-      {step === "script" && script ? (
-        <ScriptEditor
-          script={script}
-          onUpdateScene={handleUpdateScene}
-          onRegenerate={() => handleGenerateScript(idea, artStyle)}
-          onApprove={() => handleApproveScript(false)}
-          onPreviewWithoutImages={() => handleApproveScript(true)}
-          onBack={() => setStep("idea")}
-          isLoading={isLoading}
-        />
-      ) : null}
-      {step === "generating" ? (
-        <GenerationProgress
-          progress={imageProgress}
-          totalScenes={script?.scenes.length ?? 0}
-        />
-      ) : null}
-      {step === "preview" ? (
-        <PreviewPlayer
-          scenes={scenes}
-          onBack={() => setStep("script")}
-          onExport={() => {
-            window.alert("Legacy mode does not support web export.");
-          }}
-        />
-      ) : null}
-    </div>
-  );
-};
 
 export const App: React.FC = () => {
-  const [legacyMode, setLegacyMode] = useState(!ENABLE_V2_WIZARD);
   const [phase, setPhase] = useState<GenerationPhase>("idle");
   const [step, setStep] = useState<WizardStepV2>("idea");
   const [error, setError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [recentSessions, setRecentSessions] = useState<RecentSessionSummary[]>([]);
-  const [pendingVisualAutostart, setPendingVisualAutostart] = useState(false);
 
   const [scriptDocument, setScriptDocument] = useState<ScriptDocumentV2 | null>(null);
   const [visualPack, setVisualPack] = useState<VisualPack | null>(null);
@@ -432,17 +340,6 @@ export const App: React.FC = () => {
   useEffect(() => {
     const savedSessions = readSavedSessions();
     setRecentSessions(savedSessions.map(summarizeSession));
-
-    if (savedSessions.length === 0) {
-      return;
-    }
-
-    const latest = savedSessions[0];
-    setScriptDocument(latest.scriptDocument);
-    setVisualPack(latest.visualPack);
-    setRenderPack(latest.renderPack);
-    setStep(inferStepFromSession(latest));
-    setPendingVisualAutostart(false);
   }, []);
 
   useEffect(() => {
@@ -464,23 +361,6 @@ export const App: React.FC = () => {
     writeSavedSessions(nextSessions);
     setRecentSessions(nextSessions.map(summarizeSession));
   }, [scriptDocument, visualPack, renderPack, step]);
-
-  useEffect(() => {
-    if (
-      !pendingVisualAutostart ||
-      step !== "visual-review" ||
-      !scriptDocument ||
-      visualPack
-    ) {
-      return;
-    }
-
-    console.log("[visual-ui] auto-starting visual generation", {
-      scriptId: scriptDocument.id,
-    });
-    setPendingVisualAutostart(false);
-    void createVisualJob();
-  }, [pendingVisualAutostart, step, scriptDocument, visualPack]);
 
   useEffect(() => {
     const activeJobId = visualPack?.jobId;
@@ -621,11 +501,10 @@ export const App: React.FC = () => {
     }
 
     setError(null);
-    setScriptDocument(session.scriptDocument);
+    setScriptDocument(withPhraseCount(session.scriptDocument));
     setVisualPack(session.visualPack);
     setRenderPack(session.renderPack);
     setStep(inferStepFromSession(session));
-    setPendingVisualAutostart(false);
   }
 
   function clearRecentSessions() {
@@ -634,6 +513,17 @@ export const App: React.FC = () => {
     }
 
     setRecentSessions([]);
+  }
+
+  function resetWorkflowFromScratch() {
+    setError(null);
+    setIsWorking(false);
+    setPhase("idle");
+    setStep("idea");
+    setScriptDocument(null);
+    setVisualPack(null);
+    setRenderPack(null);
+    clearRecentSessions();
   }
 
   async function createScriptV2(payload: ScriptRequestV2) {
@@ -649,7 +539,7 @@ export const App: React.FC = () => {
       });
 
       const data = await parseApiResponse<ScriptDocumentV2>(response);
-      setScriptDocument(parseScriptDocument(data, payload));
+      setScriptDocument(withPhraseCount(parseScriptDocument(data, payload)));
       setVisualPack(null);
       setRenderPack(null);
       setStep("script-lab");
@@ -657,7 +547,7 @@ export const App: React.FC = () => {
       setError(
         err instanceof Error
           ? err.message
-          : "No se pudo generar el script lab.",
+          : "No se pudo generar el guion.",
       );
     } finally {
       setIsWorking(false);
@@ -678,13 +568,14 @@ export const App: React.FC = () => {
       });
 
       const data = await parseApiResponse<ScriptDocumentV2>(response);
-      setScriptDocument({
-        ...document,
-        ...data,
-      });
+      setScriptDocument(
+        withPhraseCount({
+          ...document,
+          ...data,
+        }),
+      );
       setVisualPack(null);
       setRenderPack(null);
-      setPendingVisualAutostart(true);
       setStep("visual-review");
     } catch (err) {
       setError(
@@ -711,12 +602,25 @@ export const App: React.FC = () => {
     setError(null);
 
     try {
+      const syncResponse = await fetch(apiUrl(`/api/script/v2/${scriptDocument.id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(scriptDocument),
+      });
+
+      const syncedScript = await parseApiResponse<ScriptDocumentV2>(syncResponse);
+      const scriptForJob: ScriptDocumentV2 = {
+        ...scriptDocument,
+        ...syncedScript,
+      };
+      setScriptDocument(withPhraseCount(scriptForJob));
+
       const payload: VisualJobRequestV2 = {
-        scriptId: scriptDocument.id,
-        script: scriptDocument,
+        scriptId: scriptForJob.id,
+        script: scriptForJob,
         regenerateActIndex,
-        budgetCapUsd: scriptDocument.budgetCapUsd,
-        useVeo: scriptDocument.useVeo,
+        budgetCapUsd: scriptForJob.budgetCapUsd,
+        useVeo: scriptForJob.useVeo,
       };
 
       const response = await fetch(apiUrl("/api/visuals/v2/jobs"), {
@@ -754,7 +658,7 @@ export const App: React.FC = () => {
         heroVideo: startPayload.heroVideo ?? visualPack?.heroVideo,
         imageZip: startPayload.imageZip ?? visualPack?.imageZip,
         manifest: startPayload.manifest ?? visualPack?.manifest,
-        estimatedCost: startPayload.estimatedCost ?? scriptDocument.estimatedCost,
+        estimatedCost: startPayload.estimatedCost ?? scriptForJob.estimatedCost,
         actualCost: startPayload.actualCost,
         expiresAt: startPayload.expiresAt,
       });
@@ -842,6 +746,30 @@ export const App: React.FC = () => {
     });
   }
 
+  function updateActPrompt(actIndex: number, value: string) {
+    setScriptDocument((current) => {
+      if (!current) return current;
+      const acts = current.acts.map((act, index) =>
+        index === actIndex ? { ...act, visualPrompt: value } : act,
+      );
+      return { ...current, acts };
+    });
+  }
+
+  function applyActPromptPreset(actIndex: number, preset: string) {
+    setScriptDocument((current) => {
+      if (!current) return current;
+      const acts = current.acts.map((act, index) => {
+        if (index !== actIndex) return act;
+        return {
+          ...act,
+          visualPrompt: mergePrompt(act.visualPrompt, preset),
+        };
+      });
+      return { ...current, acts };
+    });
+  }
+
   function updateActPhraseIndexes(actIndex: number, rawValue: string) {
     const nextIndexes = rawValue
       .split(",")
@@ -870,53 +798,27 @@ export const App: React.FC = () => {
     });
   }
 
-  if (legacyMode) {
-    return (
-      <div>
-        <div className="legacy-toggle-banner">
-          <span>Legacy mode activado.</span>
-          {ENABLE_V2_WIZARD ? (
-            <button type="button" onClick={() => setLegacyMode(false)}>
-              Cambiar a Wizard V2
-            </button>
-          ) : null}
-        </div>
-        <LegacyExperience />
-      </div>
-    );
-  }
-
   return (
     <WizardShell
       currentStep={step}
       phase={phase}
       title={
         step === "idea"
-          ? "Construye un short mas coherente, mas barato y mas rapido."
+          ? "Define tu historia y prepara un video con direccion cinematografica."
           : step === "script-lab"
-            ? "Edita el guion antes de gastar en visuales."
+            ? "Refina el guion y su direccion visual antes de generar."
             : step === "visual-review"
-              ? "Revisa consistencia antes del render."
-              : "Descarga assets reales desde la web."
+              ? "Ajusta cada instruccion visual para obtener imagenes solidas y coherentes."
+              : "Renderiza y descarga el resultado final."
       }
-      subtitle="Pipeline V2: 10 frases, 4 visuales, 1 hero clip opcional y export web real."
-      badge={scriptDocument ? `cap US$ ${scriptDocument.budgetCapUsd.toFixed(2)}` : "mode v2"}
+      subtitle={`Flujo en 4 pasos con ${scriptDocument?.phraseCount ?? DEFAULT_PHRASE_COUNT} frases editables y control visual completo.`}
+      onReset={resetWorkflowFromScratch}
     >
-      {ENABLE_V2_WIZARD ? (
-        <button
-          type="button"
-          className="legacy-switch"
-          onClick={() => setLegacyMode(true)}
-        >
-          Abrir modo legacy
-        </button>
-      ) : null}
-
       {error ? (
         <div className="error-banner">
           <span>{error}</span>
           <button type="button" onClick={() => setError(null)}>
-            Dismiss
+            Cerrar
           </button>
         </div>
       ) : null}
@@ -927,6 +829,7 @@ export const App: React.FC = () => {
           initialStyle={scriptDocument?.styleBible.artStyle ?? DEFAULT_STYLE}
           initialBudgetCapUsd={scriptDocument?.budgetCapUsd ?? DEFAULT_BUDGET_CAP}
           initialUseVeo={scriptDocument?.useVeo ?? true}
+          initialPhraseCount={scriptDocument?.phraseCount ?? DEFAULT_PHRASE_COUNT}
           recentSessions={recentSessions}
           isLoading={isWorking}
           onSubmit={createScriptV2}
@@ -946,6 +849,7 @@ export const App: React.FC = () => {
               artStyle: scriptDocument.styleBible.artStyle,
               budgetCapUsd: scriptDocument.budgetCapUsd,
               useVeo: scriptDocument.useVeo,
+              phraseCount: scriptDocument.phraseCount ?? scriptDocument.phrases.length,
             })
           }
           onProceed={() => saveScriptDocument(scriptDocument)}
@@ -965,6 +869,8 @@ export const App: React.FC = () => {
           onGenerate={() => createVisualJob()}
           onRegenerateAct={(actIndex) => createVisualJob(actIndex)}
           onProceed={() => setStep("render-download")}
+          onActPromptChange={updateActPrompt}
+          onApplyPromptPreset={applyActPromptPreset}
         />
       ) : null}
 
@@ -982,10 +888,10 @@ export const App: React.FC = () => {
 
       {phase !== "idle" ? (
         <JobProgressList
-          title="Live activity"
+          title="Actividad en vivo"
           items={[
             {
-              label: "Script generation",
+              label: "Generacion de guion",
               status:
                 phase === "script"
                   ? "running"
@@ -994,7 +900,7 @@ export const App: React.FC = () => {
                     : "pending",
             },
             {
-              label: "Visual pack",
+              label: "Paquete visual",
               status:
                 phase === "visuals"
                   ? "running"
@@ -1005,7 +911,7 @@ export const App: React.FC = () => {
                       : "pending",
             },
             {
-              label: "Render output",
+              label: "Salida final",
               status:
                 phase === "render"
                   ? "running"

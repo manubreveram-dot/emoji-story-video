@@ -11,35 +11,45 @@ export const TitleScene: React.FC<{ scene: SceneBlueprint }> = ({ scene }) => {
       <Background palette={scene.palette} animation={scene.backgroundAnimation} />
       <AbsoluteFill
         style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 40,
+          justifyContent: "space-between",
+          padding: "80px 52px 92px",
         }}
       >
-        {/* Emojis above text */}
-        <div style={{ display: "flex", gap: 24, justifyContent: "center" }}>
-          {scene.emojis.slice(0, 3).map((emoji, i) => (
-            <AnimatedEmoji
-              key={i}
-              emoji={emoji}
-              animation={scene.emojiAnimation}
-              size={140}
-              delay={i * 10}
-            />
-          ))}
-        </div>
+        <div />
 
-        {/* Main text */}
-        <AnimatedText
-          text={scene.text}
-          animation={scene.textAnimation}
-          color={scene.palette.text}
-          fontSize={72}
-          fontWeight="700"
-          delay={15}
-        />
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 28,
+            alignItems: "flex-start",
+          }}
+        >
+          <div style={{ display: "flex", gap: 16 }}>
+            {scene.emojis.slice(0, 3).map((emoji, index) => (
+              <AnimatedEmoji
+                key={`${emoji}-${index}`}
+                emoji={emoji}
+                animation={scene.emojiAnimation}
+                size={92}
+                delay={index * 8}
+              />
+            ))}
+          </div>
+
+          <AnimatedText
+            text={scene.text}
+            animation={scene.textAnimation}
+            color={scene.palette.text}
+            fontSize={94}
+            fontWeight="800"
+            delay={12}
+            textAlign="left"
+            maxWidth={980}
+            letterSpacing={0.5}
+            lineHeight={1.08}
+          />
+        </div>
       </AbsoluteFill>
     </AbsoluteFill>
   );

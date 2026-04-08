@@ -50,6 +50,7 @@ export type ScriptRequestV2 = {
   artStyle: string;
   budgetCapUsd: number;
   useVeo: boolean;
+  phraseCount: number;
 };
 
 export type ScriptDocumentV2 = {
@@ -57,6 +58,7 @@ export type ScriptDocumentV2 = {
   idea: string;
   title: string;
   targetDurationSeconds: number;
+  phraseCount: number;
   budgetCapUsd: number;
   useVeo: boolean;
   estimatedCost: CostBreakdown;

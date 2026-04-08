@@ -4,7 +4,12 @@ import { StoryVideo } from "../../compositions/StoryVideo";
 import { computeTotalDuration } from "../../ai/parser";
 import { VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from "../../config/video";
 import type { SceneBlueprint } from "../../types/scene";
-import type { GeneratedAsset, RenderPack, ScriptDocumentV2, VisualPack } from "../../types/workflow-v2";
+import type {
+  GeneratedAsset,
+  RenderPack,
+  ScriptDocumentV2,
+  VisualPack,
+} from "../../types/workflow-v2";
 import { JobProgressList } from "./JobProgressList";
 
 type RenderDownloadProps = {
@@ -24,7 +29,7 @@ function downloadUrl(asset: GeneratedAsset | undefined): string | undefined {
 }
 
 export const RenderDownload: React.FC<RenderDownloadProps> = ({
-  script,
+  script: _script,
   visuals,
   renderPack,
   previewScenes,
@@ -34,39 +39,49 @@ export const RenderDownload: React.FC<RenderDownloadProps> = ({
 }) => {
   const totalDuration = computeTotalDuration(previewScenes);
   const hasPreview = previewScenes.length > 0;
+  const narrationReady = Boolean(downloadUrl(renderPack?.narrationAudio));
+  const renderStatusLabel =
+    renderPack?.status === "running"
+      ? "en curso"
+      : renderPack?.status === "done"
+        ? "listo"
+        : renderPack?.status === "error"
+          ? "error"
+          : renderPack?.status === "pending"
+            ? "pendiente"
+            : "inactivo";
 
   return (
     <div className="wizard-grid">
-      <section className="panel span-2">
+      <section className="panel span-2 panel-light">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Render & Download</p>
-            <h2>Preview final y assets descargables</h2>
+            <p className="eyebrow">Exportacion final</p>
+            <h2>Render final y descarga de entregables</h2>
             <p className="muted-copy">
-              El mp4 final, las 4 imagenes y el clip hero se descargan desde esta pantalla.
+              Revisa preview, exporta MP4 y descarga archivos en un solo paso.
             </p>
-          </div>
-          <div className="wizard-badge">
-            TTL 1h
           </div>
         </div>
 
         <div className="render-stage">
           {hasPreview ? (
-            <Player
-              component={StoryVideo}
-              inputProps={{
-                scenes: previewScenes,
-                audioUrl: renderPack?.narrationAudio?.path,
-              }}
-              durationInFrames={Math.max(totalDuration, VIDEO_FPS)}
-              compositionWidth={VIDEO_WIDTH}
-              compositionHeight={VIDEO_HEIGHT}
-              fps={VIDEO_FPS}
-              style={{ width: 360, height: 640 }}
-              controls
-              loop
-            />
+            <div className="preview-player-shell">
+              <Player
+                component={StoryVideo}
+                inputProps={{
+                  scenes: previewScenes,
+                  audioUrl: renderPack?.narrationAudio?.path,
+                }}
+                durationInFrames={Math.max(totalDuration, VIDEO_FPS)}
+                compositionWidth={VIDEO_WIDTH}
+                compositionHeight={VIDEO_HEIGHT}
+                fps={VIDEO_FPS}
+                style={{ width: 360, height: 640 }}
+                controls
+                loop
+              />
+            </div>
           ) : (
             <div className="visual-empty render-empty">
               <span>No hay preview disponible aun.</span>
@@ -74,56 +89,73 @@ export const RenderDownload: React.FC<RenderDownloadProps> = ({
           )}
 
           <div className="download-card">
-            <p className="eyebrow">Downloads</p>
-            <h3>{renderPack?.status ?? "idle"}</h3>
+            <p className="eyebrow">Descargas</p>
+            <h3>{renderStatusLabel}</h3>
+            <p className="muted-copy">
+              Narracion: {narrationReady ? "lista" : "pendiente"} | Audio WAV
+            </p>
+
             <div className="button-stack">
               <a
-                className={`download-link ${downloadUrl(renderPack?.finalVideo) ? "" : "download-link-disabled"}`}
+                className={`download-link ${
+                  downloadUrl(renderPack?.finalVideo) ? "" : "download-link-disabled"
+                }`}
                 href={downloadUrl(renderPack?.finalVideo)}
               >
                 Descargar MP4 final
               </a>
               <a
-                className={`download-link ${downloadUrl(renderPack?.imageZip) ? "" : "download-link-disabled"}`}
+                className={`download-link ${
+                  downloadUrl(renderPack?.imageZip) ? "" : "download-link-disabled"
+                }`}
                 href={downloadUrl(renderPack?.imageZip)}
               >
-                Descargar ZIP imagenes
+                Descargar ZIP de imagenes
               </a>
               <a
-                className={`download-link ${downloadUrl(renderPack?.narrationAudio) ? "" : "download-link-disabled"}`}
+                className={`download-link ${
+                  downloadUrl(renderPack?.narrationAudio)
+                    ? ""
+                    : "download-link-disabled"
+                }`}
                 href={downloadUrl(renderPack?.narrationAudio)}
               >
                 Descargar narracion WAV
               </a>
               <a
-                className={`download-link ${downloadUrl(renderPack?.heroVideo ?? visuals?.heroVideo) ? "" : "download-link-disabled"}`}
+                className={`download-link ${
+                  downloadUrl(renderPack?.heroVideo ?? visuals?.heroVideo)
+                    ? ""
+                    : "download-link-disabled"
+                }`}
                 href={downloadUrl(renderPack?.heroVideo ?? visuals?.heroVideo)}
               >
-                Descargar clip Veo
+                Descargar clip hero
               </a>
             </div>
-            <p className="muted-copy">
-              Costo real: US$ {renderPack?.actualCost?.totalUsd.toFixed(2) ?? visuals?.actualCost?.totalUsd.toFixed(2) ?? script.estimatedCost.totalUsd.toFixed(2)}
-            </p>
           </div>
         </div>
       </section>
 
-      <aside className="panel">
+      <aside className="panel panel-light">
         <JobProgressList
-          title="Render pipeline"
+          title="Proceso de render"
           items={
             renderPack?.progress ?? [
-              { label: "Collect assets", status: visuals?.status === "done" ? "done" : "pending" },
-              { label: "Compose Remotion", status: "pending" },
-              { label: "Export MP4", status: "pending" },
+              {
+                label: "Recolectar assets",
+                status: visuals?.status === "done" ? "done" : "pending",
+              },
+              { label: "Narracion", status: "pending" },
+              { label: "Componer video", status: "pending" },
+              { label: "Exportar MP4", status: "pending" },
             ]
           }
         />
 
         <div className="button-stack">
           <button type="button" className="ghost-button" onClick={onBack}>
-            Volver a visuales
+            Volver a fotos
           </button>
           <button
             type="button"

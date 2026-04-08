@@ -92,6 +92,7 @@ export type GenerateScriptV2Options = {
   costCapUsd?: number;
   actGroups?: Array<[number, number]>;
   includeVeo?: boolean;
+  lineCount?: number;
 };
 
 export type GenerateImagePackV2Options = {

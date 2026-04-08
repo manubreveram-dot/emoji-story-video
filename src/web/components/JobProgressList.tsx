@@ -17,11 +17,18 @@ export const JobProgressList: React.FC<JobProgressListProps> = ({
   items,
   compact = false,
 }) => {
+  const statusLabel: Record<ProgressItem["status"], string> = {
+    pending: "pendiente",
+    running: "en curso",
+    done: "listo",
+    error: "error",
+  };
+
   return (
-    <section className="panel panel-muted">
+    <section className="panel panel-light panel-muted job-progress-card">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">Pipeline</p>
+          <p className="eyebrow">Estado</p>
           <h3>{title}</h3>
         </div>
       </div>
@@ -34,7 +41,7 @@ export const JobProgressList: React.FC<JobProgressListProps> = ({
               {item.detail ? <span>{item.detail}</span> : null}
             </div>
             <span className={`status-chip status-chip-${item.status}`}>
-              {item.status}
+              {statusLabel[item.status]}
             </span>
           </div>
         ))}

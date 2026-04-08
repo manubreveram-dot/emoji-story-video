@@ -1,19 +1,14 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
-const ART_STYLES = [
-  { id: "cinematic spiritual realism", label: "Cinematic" },
-  { id: "minimal symbolic illustration", label: "Minimal" },
-  { id: "editorial 3d surrealism", label: "3D Editorial" },
-  { id: "soft watercolor storytelling", label: "Watercolor" },
-  { id: "anime dramatic key art", label: "Anime" },
-  { id: "neo noir devotional poster", label: "Neo Noir" },
-];
+const PHRASE_COUNT_OPTIONS = [6, 8, 10, 12, 14];
+const DEFAULT_INTERNAL_STYLE = "realismo fotografico cinematografico";
 
 type IdeaStudioProps = {
   initialIdea: string;
   initialStyle: string;
   initialBudgetCapUsd: number;
   initialUseVeo: boolean;
+  initialPhraseCount: number;
   recentSessions: Array<{
     id: string;
     title: string;
@@ -28,16 +23,27 @@ type IdeaStudioProps = {
     artStyle: string;
     budgetCapUsd: number;
     useVeo: boolean;
+    phraseCount: number;
   }) => void;
   onResumeSession: (sessionId: string) => void;
   onClearSessions: () => void;
 };
+
+function deriveArtStyle(idea: string, fallback: string): string {
+  const source = idea.trim();
+  if (source.length < 12) {
+    return fallback || DEFAULT_INTERNAL_STYLE;
+  }
+
+  return `realismo fotografico de alta fidelidad, direccion cinematografica coherente con este contexto: ${source.slice(0, 260)}`;
+}
 
 export const IdeaStudio: React.FC<IdeaStudioProps> = ({
   initialIdea,
   initialStyle,
   initialBudgetCapUsd,
   initialUseVeo,
+  initialPhraseCount,
   recentSessions,
   isLoading,
   onSubmit,
@@ -45,97 +51,59 @@ export const IdeaStudio: React.FC<IdeaStudioProps> = ({
   onClearSessions,
 }) => {
   const [idea, setIdea] = useState(initialIdea);
-  const [artStyle, setArtStyle] = useState(initialStyle);
-  const [budgetCapUsd, setBudgetCapUsd] = useState(initialBudgetCapUsd);
-  const [useVeo, setUseVeo] = useState(initialUseVeo);
+  const [phraseCount, setPhraseCount] = useState(initialPhraseCount);
+  const statusLabel: Record<"script" | "visuals" | "render", string> = {
+    script: "guion",
+    visuals: "fotos",
+    render: "render",
+  };
 
-  const canSubmit = idea.trim().length >= 12 && !isLoading;
+  useEffect(() => {
+    setIdea(initialIdea);
+    setPhraseCount(initialPhraseCount);
+  }, [initialIdea, initialPhraseCount]);
+
+  const canSubmit = idea.trim().length >= 14 && !isLoading;
 
   return (
     <div className="wizard-grid wizard-grid-hero">
-      <section className="panel hero-panel">
-        <p className="eyebrow">Idea Studio</p>
-        <h2>De idea suelta a guion controlado, sin quemar presupuesto.</h2>
+      <section className="panel hero-panel panel-light">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Paso 1</p>
+            <h2>Describe tu historia con tono, mensaje y atmosfera visual.</h2>
+          </div>
+        </div>
+
         <p className="lead">
-          Define la premisa, el look y el cap de costo antes de gastar tokens.
-          El pipeline V2 generara 10 frases, las condensara en 4 actos visuales
-          y solo usara Veo si sigue dentro del presupuesto.
+          Incluye hook inicial, emocion dominante, arco narrativo y cierre.
+          El sistema construira guion y prompts visuales a partir de este texto.
         </p>
 
         <label className="field">
-          <span>Idea del video</span>
+          <span>Brief creativo completo</span>
           <textarea
             value={idea}
             onChange={(event) => setIdea(event.target.value)}
-            placeholder="Ej: Un video breve sobre disciplina interior, silencio mental y direccion de vida."
-            rows={7}
+            rows={10}
+            placeholder="Ejemplo: Quiero un video vertical sobre disciplina interior con hook fuerte tipo TikTok. Debe sentirse real, cinematografico, profundo y cerrar con una frase poderosa."
           />
         </label>
 
-        <div className="style-grid">
-          {ART_STYLES.map((style) => (
-            <button
-              key={style.id}
-              type="button"
-              className={`style-pill ${artStyle === style.id ? "style-pill-active" : ""}`}
-              onClick={() => setArtStyle(style.id)}
-            >
-              {style.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <aside className="panel aside-panel">
-        <div className="budget-card">
-          <p className="eyebrow">Costo objetivo</p>
-          <strong>US$ {budgetCapUsd.toFixed(2)}</strong>
-          <span>
-            Default ahorro. Si Veo rompe este cap, el sistema cae a modo
-            Remotion sin romper el flujo.
-          </span>
-        </div>
-
-        <label className="field">
-          <span>Cap de costo (USD)</span>
-          <input
-            type="range"
-            min={0.1}
-            max={1}
-            step={0.05}
-            value={budgetCapUsd}
-            onChange={(event) => setBudgetCapUsd(Number(event.target.value))}
-          />
-        </label>
-
-        <label className="toggle-row">
-          <div>
-            <strong>Intentar clip Veo hero</strong>
-            <span>
-              Se intentara solo si no excede el cap.
-            </span>
-          </div>
-          <button
-            type="button"
-            className={`toggle-button ${useVeo ? "toggle-button-on" : ""}`}
-            onClick={() => setUseVeo((value) => !value)}
-          >
-            <span />
-          </button>
-        </label>
-
-        <div className="stat-grid">
-          <div className="stat-card">
-            <span>Frases</span>
-            <strong>10</strong>
-          </div>
-          <div className="stat-card">
-            <span>Visuales</span>
-            <strong>4</strong>
-          </div>
-          <div className="stat-card">
-            <span>Hero clip</span>
-            <strong>{useVeo ? "1" : "0"}</strong>
+        <div className="field">
+          <span>Cuantas frases debe tener el guion</span>
+          <div className="option-row" role="radiogroup" aria-label="Cantidad de frases">
+            {PHRASE_COUNT_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`option-pill ${phraseCount === option ? "option-pill-active" : ""}`}
+                onClick={() => setPhraseCount(option)}
+                aria-pressed={phraseCount === option}
+              >
+                {option}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -146,21 +114,33 @@ export const IdeaStudio: React.FC<IdeaStudioProps> = ({
           onClick={() =>
             onSubmit({
               idea,
-              artStyle,
-              budgetCapUsd,
-              useVeo,
+              artStyle: deriveArtStyle(idea, initialStyle),
+              budgetCapUsd: initialBudgetCapUsd,
+              useVeo: initialUseVeo,
+              phraseCount,
             })
           }
         >
-          {isLoading ? "Generando guion V2..." : "Generar script lab"}
+          {isLoading ? "Generando guion..." : "Crear guion inicial"}
         </button>
+      </section>
+
+      <aside className="panel aside-panel panel-light">
+        <div className="summary-card">
+          <p className="eyebrow">Guia rapida</p>
+          <h3>Texto que mejor funciona</h3>
+          <p className="muted-copy">
+            Escribe en espanol con detalles concretos: protagonista, ambiente,
+            conflicto, transformacion y cierre.
+          </p>
+        </div>
 
         {recentSessions.length > 0 ? (
           <div className="saved-sessions-card">
             <div className="saved-sessions-header">
               <div>
-                <p className="eyebrow">Recientes</p>
-                <strong>Recuperar sesiones guardadas</strong>
+                <p className="eyebrow">Sesiones</p>
+                <strong>Retomar trabajo</strong>
               </div>
               <button
                 type="button"
@@ -184,8 +164,13 @@ export const IdeaStudio: React.FC<IdeaStudioProps> = ({
                     <span>{session.subtitle}</span>
                   </div>
                   <div className="saved-session-meta">
-                    <span>{session.status}</span>
-                    <small>{new Date(session.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>
+                    <span>{statusLabel[session.status]}</span>
+                    <small>
+                      {new Date(session.savedAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </small>
                   </div>
                 </button>
               ))}

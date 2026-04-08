@@ -177,7 +177,12 @@ export const API_CONFIG = {
     },
   },
   pipelineV2: {
-    targetLineCount: 10,
+    defaultLineCount: 10,
+    minLineCount: 6,
+    maxLineCount: 14,
+    get targetLineCount(): number {
+      return this.defaultLineCount;
+    },
     targetDurationSeconds: 30,
     get actGroups(): string[] {
       return getActGroups();

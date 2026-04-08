@@ -14,6 +14,12 @@ type AnimatedTextProps = {
   fontSize?: number;
   fontWeight?: string;
   delay?: number;
+  textAlign?: React.CSSProperties["textAlign"];
+  fontFamily?: string;
+  letterSpacing?: number;
+  maxWidth?: number;
+  textShadow?: string;
+  lineHeight?: number;
 };
 
 export const AnimatedText: React.FC<AnimatedTextProps> = ({
@@ -23,6 +29,12 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
   fontSize = 64,
   fontWeight = "700",
   delay = 0,
+  textAlign = "center",
+  fontFamily = "\"Montserrat\", \"Inter\", sans-serif",
+  letterSpacing = 0,
+  maxWidth,
+  textShadow = "0 6px 20px rgba(0, 0, 0, 0.22)",
+  lineHeight = 1.3,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -32,9 +44,13 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
     color,
     fontSize,
     fontWeight,
-    textAlign: "center",
-    lineHeight: 1.3,
+    textAlign,
+    lineHeight,
     padding: "0 40px",
+    fontFamily,
+    letterSpacing,
+    textShadow,
+    maxWidth,
   };
 
   if (animation === "typewriter") {
@@ -64,7 +80,19 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
   }
 
   return (
-    <div style={{ ...baseStyle, display: "flex", flexWrap: "wrap", justifyContent: "center" }}>
+    <div
+      style={{
+        ...baseStyle,
+        display: "flex",
+        flexWrap: "wrap",
+        justifyContent:
+          textAlign === "left"
+            ? "flex-start"
+            : textAlign === "right"
+              ? "flex-end"
+              : "center",
+      }}
+    >
       {wordStyles.map(({ word, style }, i) => (
         <span key={i} style={style}>
           {word}

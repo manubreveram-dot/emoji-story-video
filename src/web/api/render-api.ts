@@ -20,9 +20,29 @@ import {
   updateScriptDraft,
 } from "./v2-runtime";
 
+function normalizePhraseCount(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.round(parsed);
+    }
+  }
+  return undefined;
+}
+
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
+app.use((error: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (error instanceof SyntaxError && "body" in error) {
+    res.status(400).json({ error: "JSON invalido en la solicitud." });
+    return;
+  }
+  next(error);
+});
 startCleanupLoop();
 
 app.get("/health", (_req, res) => {
@@ -117,16 +137,17 @@ app.get("/api/images/:jobId", (req, res) => {
 });
 
 app.post("/api/script/v2", async (req, res) => {
-  const { idea, artStyle, costCapUsd, budgetCapUsd, useVeo } = req.body as {
+  const { idea, artStyle, costCapUsd, budgetCapUsd, useVeo, phraseCount } = req.body as {
     idea?: string;
     artStyle?: string;
     costCapUsd?: number;
     budgetCapUsd?: number;
     useVeo?: boolean;
+    phraseCount?: number;
   };
 
   if (!idea?.trim()) {
-    res.status(400).json({ error: "idea is required" });
+    res.status(400).json({ error: "El campo idea es obligatorio." });
     return;
   }
 
@@ -136,11 +157,12 @@ app.post("/api/script/v2", async (req, res) => {
       artStyle,
       costCapUsd: budgetCapUsd ?? costCapUsd,
       useVeo,
+      phraseCount: normalizePhraseCount(phraseCount),
     });
     res.status(201).json(draft);
   } catch (error) {
     res.status(500).json({
-      error: error instanceof Error ? error.message : "Script V2 generation failed",
+      error: error instanceof Error ? error.message : "Fallo la generacion del guion V2.",
     });
   }
 });
@@ -151,7 +173,7 @@ app.patch("/api/script/v2/:id", (req, res) => {
     res.json(draft);
   } catch (error) {
     res.status(404).json({
-      error: error instanceof Error ? error.message : "Script V2 draft not found",
+      error: error instanceof Error ? error.message : "No se encontro el borrador de guion V2.",
     });
   }
 });
@@ -170,12 +192,12 @@ app.post("/api/visuals/v2/jobs", async (req, res) => {
     }),
   );
   if (!scriptId) {
-    res.status(400).json({ error: "scriptId is required" });
+    res.status(400).json({ error: "scriptId es obligatorio." });
     return;
   }
 
   if (!getScriptDraft(scriptId)) {
-    res.status(404).json({ error: "Script V2 draft not found" });
+    res.status(404).json({ error: "No se encontro el borrador de guion V2." });
     return;
   }
 
@@ -188,7 +210,7 @@ app.post("/api/visuals/v2/jobs", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({
-      error: error instanceof Error ? error.message : "Visual job creation failed",
+      error: error instanceof Error ? error.message : "Fallo al crear el trabajo visual.",
     });
   }
 });
@@ -196,7 +218,7 @@ app.post("/api/visuals/v2/jobs", async (req, res) => {
 app.get("/api/visuals/v2/jobs/:jobId", (req, res) => {
   const job = getVisualJob(req.params.jobId);
   if (!job) {
-    res.status(404).json({ error: "Visual job not found" });
+    res.status(404).json({ error: "No se encontro el trabajo visual." });
     return;
   }
 
@@ -210,7 +232,7 @@ app.post("/api/render/v2/jobs", async (req, res) => {
   };
 
   if (!scriptId || !visualJobId) {
-    res.status(400).json({ error: "scriptId and visualJobId are required" });
+    res.status(400).json({ error: "scriptId y visualJobId son obligatorios." });
     return;
   }
 
@@ -222,7 +244,7 @@ app.post("/api/render/v2/jobs", async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({
-      error: error instanceof Error ? error.message : "Render job creation failed",
+      error: error instanceof Error ? error.message : "Fallo al crear el trabajo de render.",
     });
   }
 });
@@ -230,7 +252,7 @@ app.post("/api/render/v2/jobs", async (req, res) => {
 app.get("/api/render/v2/jobs/:jobId", (req, res) => {
   const job = getRenderJob(req.params.jobId);
   if (!job) {
-    res.status(404).json({ error: "Render job not found" });
+    res.status(404).json({ error: "No se encontro el trabajo de render." });
     return;
   }
 
@@ -240,13 +262,13 @@ app.get("/api/render/v2/jobs/:jobId", (req, res) => {
 app.get("/api/assets/:assetId/download", (req, res) => {
   const asset = getAsset(req.params.assetId);
   if (!asset) {
-    res.status(404).json({ error: "Asset not found or expired" });
+    res.status(404).json({ error: "El archivo no existe o expiro." });
     return;
   }
 
   const filePath = getAssetFilePath(req.params.assetId);
   if (!filePath || !fs.existsSync(filePath)) {
-    res.status(404).json({ error: "Asset file missing" });
+    res.status(404).json({ error: "No se encontro el archivo en disco." });
     return;
   }
 

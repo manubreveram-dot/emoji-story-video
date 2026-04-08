@@ -3,22 +3,22 @@ import { AbsoluteFill } from "remotion";
 import type { SceneBlueprint } from "../../types/scene";
 import { AnimatedImage } from "../../components/AnimatedImage";
 import { AnimatedText } from "../../components/AnimatedText";
+import { AnimatedEmoji } from "../../components/AnimatedEmoji";
 import { Background } from "../../components/Background";
 
 export const CinematicScene: React.FC<{ scene: SceneBlueprint }> = ({ scene }) => {
   const hasImage = scene.imageUrl && scene.imageUrl.length > 0;
-  const barHeight = 200;
+  const barHeight = 128;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: "#000" }}>
-      {/* Image in 16:9 area (centered) */}
+    <AbsoluteFill style={{ backgroundColor: "#02040a" }}>
       <div
         style={{
           position: "absolute",
           top: barHeight,
           left: 0,
           right: 0,
-          bottom: barHeight + 160, // extra space for subtitle
+          bottom: barHeight,
           overflow: "hidden",
         }}
       >
@@ -32,7 +32,6 @@ export const CinematicScene: React.FC<{ scene: SceneBlueprint }> = ({ scene }) =
         )}
       </div>
 
-      {/* Top cinematic bar */}
       <div
         style={{
           position: "absolute",
@@ -40,41 +39,52 @@ export const CinematicScene: React.FC<{ scene: SceneBlueprint }> = ({ scene }) =
           left: 0,
           right: 0,
           height: barHeight,
-          backgroundColor: "#000",
+          background:
+            "linear-gradient(180deg, #02040a 0%, rgba(2,4,10,0.94) 72%, rgba(2,4,10,0.5) 100%)",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
         }}
       />
 
-      {/* Bottom cinematic bar */}
       <div
         style={{
           position: "absolute",
-          bottom: 0,
           left: 0,
           right: 0,
-          height: barHeight + 160,
-          backgroundColor: "#000",
-        }}
-      />
-
-      {/* Subtitle text at bottom */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: 60,
-          left: 40,
-          right: 40,
+          bottom: 0,
+          height: barHeight,
+          background:
+            "linear-gradient(180deg, rgba(2,4,10,0.5) 0%, rgba(2,4,10,0.95) 30%, #02040a 100%)",
+          borderTop: "1px solid rgba(255, 255, 255, 0.08)",
           display: "flex",
-          justifyContent: "center",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 48px",
+          gap: 24,
         }}
       >
         <AnimatedText
           text={scene.text}
           animation={scene.textAnimation}
-          color="#FFFFFF"
-          fontSize={44}
-          fontWeight="500"
-          delay={10}
+          color="#f8fafc"
+          fontSize={62}
+          fontWeight="800"
+          delay={8}
+          textAlign="left"
+          maxWidth={900}
+          lineHeight={1.14}
+          textShadow="0 16px 30px rgba(0, 0, 0, 0.35)"
         />
+        <div style={{ display: "flex", gap: 14 }}>
+          {scene.emojis.slice(0, 2).map((emoji, index) => (
+            <AnimatedEmoji
+              key={`${emoji}-${index}`}
+              emoji={emoji}
+              animation={scene.emojiAnimation}
+              size={58}
+              delay={14 + index * 8}
+            />
+          ))}
+        </div>
       </div>
     </AbsoluteFill>
   );

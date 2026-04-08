@@ -1,53 +1,73 @@
 export function buildScriptPromptV2(
   idea: string,
   artStyle: string,
+  targetLineCount: number,
   targetDurationSeconds = 30,
 ): string {
-  return `You are a high-performance short-form video strategist.
+  return `Eres director creativo senior de video vertical para redes.
 
-Create a tight, emotionally coherent vertical video package for the idea:
+Objetivo:
+Crear un paquete narrativo y visual premium, coherente con este brief del usuario:
 "${idea}"
 
-Respond with ONLY valid JSON and no markdown.
+Respuesta:
+- SOLO JSON valido.
+- Sin markdown.
+- Sin texto fuera del JSON.
+- TODO en espanol.
 
-Schema:
+Esquema obligatorio:
 {
-  "title": "Short title",
+  "title": "Titulo corto, potente y memorable",
   "language": "es",
   "style": {
     "artStyle": "${artStyle}",
-    "colorTone": "vibrant",
-    "consistency": "A concise phrase that keeps the visuals coherent"
+    "colorTone": "tono cromatico conectado al brief",
+    "consistency": "regla de continuidad narrativa y visual"
   },
   "styleBible": {
-    "palette": "descriptive palette phrase",
-    "lighting": "consistent lighting style",
-    "camera": "camera language",
-    "characterDescriptors": "stable subject description if characters appear",
-    "negativePrompt": "what to avoid in all images",
+    "palette": "paleta especifica, no generica",
+    "lighting": "iluminacion concreta",
+    "camera": "lenguaje de camara concreto",
+    "characterDescriptors": "descripcion estable de protagonista y entorno",
+    "negativePrompt": "lista de defectos prohibidos",
     "seedBase": 1234
   },
   "lines": [
     {
       "order": 1,
-      "narration": "Line shown on screen",
-      "mood": "hopeful",
-      "emojis": ["✨", "🌊"],
+      "narration": "frase breve de alto impacto",
+      "mood": "intense",
+      "emojis": ["\\u2728", "\\ud83d\\udd25"],
       "durationSeconds": 3,
-      "visualIntent": "short visual description for this line"
+      "visualIntent": "descripcion visual fotografica y realista"
     }
   ]
 }
 
-Rules:
-- Exactly 10 lines.
-- The sum of durationSeconds must equal exactly ${targetDurationSeconds}.
-- narration must be concise, emotional, and in the same language as the idea.
-- Max 12 words per line.
-- Visuals must feel like one single piece, not 10 unrelated shots.
-- styleBible must be specific and production-ready.
-- Keep the same protagonist/setting language throughout when relevant.
-- mood must be one of: hopeful, dramatic, peaceful, energetic, melancholy, joyful, intense.
-- Use actual emoji characters.
-- Avoid generic filler lines.`;
+Reglas duras:
+- EXACTAMENTE ${targetLineCount} lineas.
+- La suma de durationSeconds debe ser EXACTAMENTE ${targetDurationSeconds}.
+- Maximo 12 palabras por narration.
+- Primera linea: hook fuerte y directo.
+- Ultima linea: cierre memorable y emocional.
+- Prohibido texto abstracto vacio o frases genericas.
+- visualIntent debe ser realista, cinematografico y util para generar foto de calidad.
+
+Coherencia con el brief:
+- Usa vocabulario del usuario, no inventes otro tema.
+- Si el usuario menciona estilo espiritual, sabio, ancestral o tono TikTok, integralo en guion y visualIntent.
+- styleBible debe derivarse del brief, no de plantillas genericas.
+- Mantener continuidad del protagonista, atmosfera y contexto durante todo el video.
+
+Negative prompt obligatorio (integrado dentro de styleBible.negativePrompt):
+- piel plastica
+- manos deformes
+- ojos artificiales
+- texto en imagen
+- watermark
+- artefactos IA
+
+Valores permitidos de mood:
+hopeful, dramatic, peaceful, energetic, melancholy, joyful, intense`;
 }

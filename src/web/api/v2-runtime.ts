@@ -31,6 +31,7 @@ type CreateScriptOptions = {
   artStyle?: string;
   costCapUsd?: number;
   useVeo?: boolean;
+  phraseCount?: number;
 };
 
 type UpdateScriptOptions = Partial<
@@ -167,6 +168,14 @@ function toCostBreakdown(estimate: PhaseCostEstimate): CostBreakdown {
   };
 }
 
+function clampPhraseCount(value?: number): number {
+  const parsed = Math.round(value ?? API_CONFIG.pipelineV2.defaultLineCount);
+  return Math.min(
+    API_CONFIG.pipelineV2.maxLineCount,
+    Math.max(API_CONFIG.pipelineV2.minLineCount, parsed),
+  );
+}
+
 function toPipelineStyleBible(styleBible: ScriptDocumentV2["styleBible"]): PipelineStyleBible {
   return {
     artStyle: styleBible.artStyle,
@@ -180,12 +189,18 @@ function toPipelineStyleBible(styleBible: ScriptDocumentV2["styleBible"]): Pipel
 }
 
 function buildDefaultActsFromPhrases(phrases: ScriptDocumentV2["phrases"]): ActDraft[] {
-  const groups = [
-    [0, 3],
-    [3, 5],
-    [5, 8],
-    [8, 10],
-  ];
+  const ratioBreakpoints = [0, 0.3, 0.5, 0.8, 1];
+  const groups: Array<[number, number]> = [];
+  let start = 0;
+
+  for (let index = 0; index < 4; index++) {
+    const ratioEnd = ratioBreakpoints[index + 1] ?? 1;
+    const maxEnd = Math.max(start, Math.round(phrases.length * ratioEnd));
+    const end = index === 3 ? phrases.length : Math.min(phrases.length, maxEnd);
+    groups.push([start, end]);
+    start = Math.min(phrases.length, end);
+  }
+
   return groups.map(([start, end], index) => {
     const subset = phrases.slice(start, end);
     return {
@@ -197,6 +212,18 @@ function buildDefaultActsFromPhrases(phrases: ScriptDocumentV2["phrases"]): ActD
       visualPrompt: subset.map((item) => item.text).join(" "),
     };
   });
+}
+
+function normalizeScriptDocument(document: ScriptDocumentV2): ScriptDocumentV2 {
+  const phraseCount = document.phrases.length;
+  return {
+    ...document,
+    phraseCount,
+    acts:
+      document.acts.length > 0
+        ? document.acts
+        : buildDefaultActsFromPhrases(document.phrases),
+  };
 }
 
 function scriptPackageToDocument(
@@ -245,6 +272,7 @@ function scriptPackageToDocument(
     idea: scriptPackage.idea,
     title: scriptPackage.title,
     targetDurationSeconds: scriptPackage.totalDurationSeconds,
+    phraseCount: scriptPackage.lines.length,
     budgetCapUsd,
     useVeo,
     estimatedCost: toCostBreakdown(scriptPackage.costEstimate),
@@ -451,7 +479,7 @@ function writeOfflinePlaceholderImage(
       ${escapeXml(act.visualPrompt)}
     </div>
   </foreignObject>
-  <text x="140" y="1690" fill="#fde68a" font-size="30" font-family="Arial, sans-serif">Generated without Gemini credentials to unblock local desktop debugging.</text>
+  <text x="140" y="1690" fill="#fde68a" font-size="30" font-family="Arial, sans-serif">Generado sin credenciales Gemini para desbloquear pruebas locales.</text>
 </svg>`;
 
   fs.writeFileSync(filePath, svg, "utf8");
@@ -480,7 +508,7 @@ function createOfflineVisualPackage(
     images,
     heroClip: {
       enabled: false,
-      skippedReason: "Offline preview mode enabled because GEMINI_API_KEY is missing.",
+    skippedReason: "Modo local activado porque falta GEMINI_API_KEY.",
     },
     costEstimate: {
       scriptUsd: 0,
@@ -492,7 +520,7 @@ function createOfflineVisualPackage(
       withinCap: true,
       veoAllowed: false,
       fallbackReason:
-        "Offline preview mode enabled because GEMINI_API_KEY is missing.",
+        "Modo local activado porque falta GEMINI_API_KEY.",
     },
   };
 }
@@ -616,16 +644,16 @@ function buildVisualProgress(
 ): JobProgressItem[] {
   return [
     {
-      label: "Style Bible",
+      label: "Guia visual",
       status: status === "pending" ? "pending" : "done",
     },
     {
-      label: "Image pack",
+      label: "Paquete de imagenes",
       status,
       detail,
     },
     {
-      label: "Veo hero",
+      label: "Clip hero",
       status: "pending",
     },
   ];
@@ -708,19 +736,23 @@ export async function createScriptDraft(
 ): Promise<ScriptDocumentV2> {
   const budgetCapUsd = options.costCapUsd ?? API_CONFIG.costs.capUsdDefault;
   const useVeo = options.useVeo ?? API_CONFIG.veo.enabledDefault;
+  const phraseCount = clampPhraseCount(options.phraseCount);
   let document: ScriptDocumentV2;
   let scriptPackage: ScriptPackageV2;
 
   try {
     scriptPackage = await generateScriptV2(
       options.idea,
-      options.artStyle || "cinematic spiritual realism",
+      options.artStyle || "realismo fotografico cinematografico",
       {
         costCapUsd: budgetCapUsd,
         includeVeo: useVeo,
+        lineCount: phraseCount,
       },
     );
-    document = scriptPackageToDocument(scriptPackage, budgetCapUsd, useVeo);
+    document = normalizeScriptDocument(
+      scriptPackageToDocument(scriptPackage, budgetCapUsd, useVeo),
+    );
   } catch (error) {
     if (!isMissingGeminiKeyError(error)) {
       throw error;
@@ -728,10 +760,12 @@ export async function createScriptDraft(
 
     document = createFallbackScriptDocument(
       options.idea,
-      options.artStyle || "cinematic spiritual realism",
+      options.artStyle || "realismo fotografico cinematografico",
       budgetCapUsd,
       useVeo,
+      phraseCount,
     );
+    document = normalizeScriptDocument(document);
     scriptPackage = documentToScriptPackage(document);
   }
 
@@ -747,6 +781,7 @@ export async function createScriptDraft(
     scriptId: document.id,
     capUsd: budgetCapUsd,
     useVeo,
+    phraseCount: document.phraseCount,
     estimatedTotalUsd: document.estimatedCost.totalUsd,
     withinCap: document.estimatedCost.totalUsd <= budgetCapUsd,
   });
@@ -759,7 +794,7 @@ export function updateScriptDraft(
 ): ScriptDocumentV2 {
   const current = scriptRecords.get(scriptId);
   if (!current) {
-    throw new Error("Script V2 draft not found.");
+    throw new Error("No se encontro el borrador de guion V2.");
   }
 
   const nextDocument: ScriptDocumentV2 = {
@@ -770,17 +805,19 @@ export function updateScriptDraft(
     styleBible: options.styleBible ?? current.document.styleBible,
     budgetCapUsd: options.budgetCapUsd ?? current.document.budgetCapUsd,
     useVeo: options.useVeo ?? current.document.useVeo,
+    phraseCount: (options.phrases ?? current.document.phrases).length,
     updatedAt: now(),
   };
 
-  const nextPackage = documentToScriptPackage(nextDocument);
+  const normalizedDocument = normalizeScriptDocument(nextDocument);
+  const nextPackage = documentToScriptPackage(normalizedDocument);
   scriptRecords.set(scriptId, {
     ...current,
-    document: nextDocument,
+    document: normalizedDocument,
     packageV2: nextPackage,
     updatedAt: now(),
   });
-  return nextDocument;
+  return normalizedDocument;
 }
 
 export function getVisualJob(jobId: string): VisualPack | undefined {
@@ -797,7 +834,7 @@ export async function createVisualJob(
 ): Promise<VisualPack> {
   const scriptRecord = scriptRecords.get(scriptId);
   if (!scriptRecord) {
-    throw new Error("Script V2 draft not found.");
+    throw new Error("No se encontro el borrador de guion V2.");
   }
 
   const jobId = makeId("visual");
@@ -806,8 +843,8 @@ export async function createVisualJob(
     status: "pending",
     message:
       regenerateActIndex === undefined
-        ? "Visual job queued."
-        : `Regeneration requested for act ${regenerateActIndex + 1}.`,
+        ? "Trabajo visual en cola."
+        : `Regeneracion solicitada para acto ${regenerateActIndex + 1}.`,
     mode: "economy",
     consistencyScore: 0,
     progress: buildVisualProgress("pending"),
@@ -840,14 +877,14 @@ async function runVisualJob(jobId: string): Promise<void> {
   const scriptRecord = scriptRecords.get(visualRecord.scriptId);
   if (!scriptRecord) {
     visualRecord.pack.status = "error";
-    visualRecord.pack.message = "Script draft no longer exists.";
+    visualRecord.pack.message = "El borrador del guion ya no existe.";
     visualRecord.updatedAt = now();
     return;
   }
 
   visualRecord.pack.status = "running";
   visualRecord.pack.progress = buildVisualProgress("running", "0/4");
-  visualRecord.pack.message = "Generating 4 consistent visuals...";
+  visualRecord.pack.message = "Generando 4 imagenes consistentes...";
   visualRecord.updatedAt = now();
   logJobEvent("visual.v2.started", {
     jobId,
@@ -930,16 +967,16 @@ async function runVisualJob(jobId: string): Promise<void> {
     visualRecord.pack = {
       ...visualRecord.pack,
       status: "done",
-      message: "Visual pack ready.",
+      message: "Paquete visual listo.",
       mode: heroVideo ? "hybrid" : "economy",
       consistencyScore: imageAssets.length === 4 ? 92 : 75,
       progress: [
-        { label: "Style Bible", status: "done" },
-        { label: "Image pack", status: "done", detail: `${imageAssets.length}/4` },
+        { label: "Guia visual", status: "done" },
+        { label: "Paquete de imagenes", status: "done", detail: `${imageAssets.length}/4` },
         {
-          label: "Veo hero",
+          label: "Clip hero",
           status: heroVideo ? "done" : "pending",
-          detail: heroVideo ? "Generated" : visualPackage.heroClip.skippedReason,
+          detail: heroVideo ? "Generado" : visualPackage.heroClip.skippedReason,
         },
       ],
       images: imageAssets,
@@ -963,11 +1000,11 @@ async function runVisualJob(jobId: string): Promise<void> {
   } catch (error) {
     visualRecord.pack.status = "error";
     visualRecord.pack.message =
-      error instanceof Error ? error.message : "Visual generation failed.";
+      error instanceof Error ? error.message : "Fallo la generacion visual.";
     visualRecord.pack.progress = [
-      { label: "Style Bible", status: "done" },
-      { label: "Image pack", status: "error" },
-      { label: "Veo hero", status: "pending" },
+      { label: "Guia visual", status: "done" },
+      { label: "Paquete de imagenes", status: "error" },
+      { label: "Clip hero", status: "pending" },
     ];
     visualRecord.updatedAt = now();
     logJobEvent("visual.v2.error", {
@@ -992,24 +1029,24 @@ export async function createRenderJob(
 ): Promise<RenderPack> {
   const scriptRecord = scriptRecords.get(scriptId);
   if (!scriptRecord) {
-    throw new Error("Script V2 draft not found.");
+    throw new Error("No se encontro el borrador de guion V2.");
   }
 
   const visualRecord = visualRecords.get(visualJobId);
   if (!visualRecord || visualRecord.pack.status !== "done") {
-    throw new Error("Visual job is not ready.");
+    throw new Error("El paquete visual aun no esta listo.");
   }
 
   const jobId = makeId("render");
   const initialPack: RenderPack = {
     jobId,
     status: "pending",
-    message: "Render job queued.",
+    message: "Trabajo de render en cola.",
     progress: [
-      { label: "Collect assets", status: "pending" },
-      { label: "Narration", status: "pending" },
-      { label: "Compose Remotion", status: "pending" },
-      { label: "Export MP4", status: "pending" },
+      { label: "Recolectar assets", status: "pending" },
+      { label: "Narracion", status: "pending" },
+      { label: "Componer video", status: "pending" },
+      { label: "Exportar MP4", status: "pending" },
     ],
     imageZip: visualRecord.pack.imageZip,
     heroVideo: visualRecord.pack.heroVideo,
@@ -1043,19 +1080,19 @@ async function runRenderJob(jobId: string): Promise<void> {
   const visualRecord = visualRecords.get(renderRecord.visualJobId);
   if (!scriptRecord || !visualRecord || visualRecord.pack.status !== "done") {
     renderRecord.pack.status = "error";
-    renderRecord.pack.message = "Missing prerequisites for render.";
+    renderRecord.pack.message = "Faltan requisitos para render.";
     renderRecord.updatedAt = now();
     return;
   }
 
   renderRecord.pack.status = "running";
   renderRecord.pack.progress = [
-    { label: "Collect assets", status: "running" },
-    { label: "Narration", status: "pending" },
-    { label: "Compose Remotion", status: "pending" },
-    { label: "Export MP4", status: "pending" },
+    { label: "Recolectar assets", status: "running" },
+    { label: "Narracion", status: "pending" },
+    { label: "Componer video", status: "pending" },
+    { label: "Exportar MP4", status: "pending" },
   ];
-  renderRecord.pack.message = "Preparing render...";
+  renderRecord.pack.message = "Preparando render...";
   renderRecord.updatedAt = now();
   logJobEvent("render.v2.started", {
     jobId,
@@ -1081,12 +1118,12 @@ async function runRenderJob(jobId: string): Promise<void> {
     let narrationAudio: GeneratedAsset | undefined;
 
     renderRecord.pack.progress = [
-      { label: "Collect assets", status: "done" },
-      { label: "Narration", status: "running" },
-      { label: "Compose Remotion", status: "running" },
-      { label: "Export MP4", status: "pending" },
+      { label: "Recolectar assets", status: "done" },
+      { label: "Narracion", status: "running" },
+      { label: "Componer video", status: "running" },
+      { label: "Exportar MP4", status: "pending" },
     ];
-    renderRecord.pack.message = "Preparing narration...";
+    renderRecord.pack.message = "Preparando narracion...";
     renderRecord.updatedAt = now();
 
     try {
@@ -1113,7 +1150,7 @@ async function runRenderJob(jobId: string): Promise<void> {
         logJobEvent("audio.v2.skipped", {
           jobId,
           scriptId: renderRecord.scriptId,
-          reason: "TTS disabled or missing Gemini API key.",
+          reason: "TTS desactivado o falta GEMINI_API_KEY.",
         });
       }
     } catch (error) {
@@ -1126,16 +1163,16 @@ async function runRenderJob(jobId: string): Promise<void> {
 
     const bundleLocation = await createBundleLocation();
     renderRecord.pack.progress = [
-      { label: "Collect assets", status: "done" },
+      { label: "Recolectar assets", status: "done" },
       {
-        label: "Narration",
+        label: "Narracion",
         status: narrationAudio ? "done" : "pending",
-        detail: narrationAudio ? "Gemini TTS ready" : "Skipped",
+        detail: narrationAudio ? "Narracion lista" : "Omitido",
       },
-      { label: "Compose Remotion", status: "running" },
-      { label: "Export MP4", status: "pending" },
+      { label: "Componer video", status: "running" },
+      { label: "Exportar MP4", status: "pending" },
     ];
-    renderRecord.pack.message = "Bundling composition...";
+    renderRecord.pack.message = "Preparando composicion...";
     renderRecord.updatedAt = now();
 
     const composition = await selectComposition({
@@ -1152,16 +1189,16 @@ async function runRenderJob(jobId: string): Promise<void> {
     const outputFile = path.join(outputDir, "final.mp4");
 
     renderRecord.pack.progress = [
-      { label: "Collect assets", status: "done" },
+      { label: "Recolectar assets", status: "done" },
       {
-        label: "Narration",
+        label: "Narracion",
         status: narrationAudio ? "done" : "pending",
-        detail: narrationAudio ? "Gemini TTS ready" : "Skipped",
+        detail: narrationAudio ? "Narracion lista" : "Omitido",
       },
-      { label: "Compose Remotion", status: "done" },
-      { label: "Export MP4", status: "running" },
+      { label: "Componer video", status: "done" },
+      { label: "Exportar MP4", status: "running" },
     ];
-    renderRecord.pack.message = "Rendering MP4...";
+    renderRecord.pack.message = "Renderizando MP4...";
     renderRecord.updatedAt = now();
 
     await renderMedia({
@@ -1210,16 +1247,16 @@ async function runRenderJob(jobId: string): Promise<void> {
     renderRecord.pack = {
       ...renderRecord.pack,
       status: "done",
-      message: "Render complete. Files ready to download.",
+      message: "Render completado. Archivos listos para descargar.",
       progress: [
-        { label: "Collect assets", status: "done" },
+        { label: "Recolectar assets", status: "done" },
         {
-          label: "Narration",
+          label: "Narracion",
           status: narrationAudio ? "done" : "pending",
-          detail: narrationAudio ? "Gemini TTS ready" : "Skipped",
+          detail: narrationAudio ? "Narracion lista" : "Omitido",
         },
-        { label: "Compose Remotion", status: "done" },
-        { label: "Export MP4", status: "done" },
+        { label: "Componer video", status: "done" },
+        { label: "Exportar MP4", status: "done" },
       ],
       finalVideo,
       narrationAudio,
@@ -1242,15 +1279,15 @@ async function runRenderJob(jobId: string): Promise<void> {
   } catch (error) {
     renderRecord.pack.status = "error";
     renderRecord.pack.message =
-      error instanceof Error ? error.message : "Render failed.";
+      error instanceof Error ? error.message : "Fallo el render.";
     renderRecord.pack.progress = [
-      { label: "Collect assets", status: "done" },
+      { label: "Recolectar assets", status: "done" },
       {
-        label: "Narration",
+        label: "Narracion",
         status: renderRecord.pack.narrationAudio ? "done" : "pending",
       },
-      { label: "Compose Remotion", status: "error" },
-      { label: "Export MP4", status: "pending" },
+      { label: "Componer video", status: "error" },
+      { label: "Exportar MP4", status: "pending" },
     ];
     renderRecord.updatedAt = now();
     logJobEvent("render.v2.error", {
