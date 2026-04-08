@@ -176,6 +176,39 @@ function clampPhraseCount(value?: number): number {
   );
 }
 
+function normalizeText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function clipWords(value: string, maxWords: number): string {
+  const words = normalizeText(value).split(" ").filter(Boolean);
+  if (words.length <= maxWords) {
+    return words.join(" ");
+  }
+  return `${words.slice(0, maxWords).join(" ")}...`;
+}
+
+function sanitizeActSummary(value: string): string {
+  const normalized = normalizeText(value.replace(/\|/g, ". "));
+  if (!normalized) {
+    return "";
+  }
+  const segments = normalized
+    .split(/[.]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const selected = segments.slice(0, 2).map((segment) => clipWords(segment, 14));
+  return selected.join(" | ");
+}
+
+function sanitizeVisualPrompt(value: string, fallback: string): string {
+  const normalized = normalizeText(value || fallback);
+  if (!normalized) {
+    return "Escena fotografica realista, sujeto claro, accion concreta y luz natural cinematografica.";
+  }
+  return clipWords(normalized.replace(/\|/g, ". "), 44);
+}
+
 function toPipelineStyleBible(styleBible: ScriptDocumentV2["styleBible"]): PipelineStyleBible {
   return {
     artStyle: styleBible.artStyle,
@@ -207,9 +240,12 @@ function buildDefaultActsFromPhrases(phrases: ScriptDocumentV2["phrases"]): ActD
       id: `act-${index + 1}`,
       index,
       title: `Acto ${index + 1}`,
-      summary: subset.map((item) => item.text).join(" "),
+      summary: sanitizeActSummary(subset.map((item) => item.text).join(" ")),
       phraseIndexes: subset.map((item) => item.index),
-      visualPrompt: subset.map((item) => item.text).join(" "),
+      visualPrompt: sanitizeVisualPrompt(
+        subset.map((item) => item.text).join(" "),
+        "Escena realista con protagonista consistente y narrativa visual clara.",
+      ),
     };
   });
 }
@@ -292,6 +328,11 @@ function lineForPhrase(
   phrase: ScriptDocumentV2["phrases"][number],
   act: ActDraft | undefined,
 ): ScriptLineV2 {
+  const visualIntent = sanitizeVisualPrompt(
+    act?.visualPrompt || "",
+    phrase.text,
+  );
+
   return {
     id: `line-${phrase.index + 1}`,
     order: phrase.index + 1,
@@ -299,7 +340,7 @@ function lineForPhrase(
     mood: phrase.mood,
     emojis: phrase.emojis,
     durationSeconds: phrase.durationSeconds,
-    visualIntent: act?.visualPrompt || phrase.text,
+    visualIntent,
   };
 }
 
@@ -375,9 +416,9 @@ function documentToScriptPackage(document: ScriptDocumentV2): ScriptPackageV2 {
       order: act.index + 1,
       title: act.title,
       lineIds: act.phraseIndexes.map((phraseIndex) => `line-${phraseIndex + 1}`),
-      summary: act.summary,
-      visualFocus: act.summary,
-      shotPrompt: act.visualPrompt,
+      summary: sanitizeActSummary(act.summary),
+      visualFocus: sanitizeActSummary(act.summary),
+      shotPrompt: sanitizeVisualPrompt(act.visualPrompt, act.summary),
     })),
     quality: {
       passed: true,

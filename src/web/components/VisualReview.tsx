@@ -20,24 +20,29 @@ type VisualReviewProps = {
 
 const PROMPT_PRESETS: Array<{ label: string; value: string }> = [
   {
-    label: "Retrato documental",
+    label: "Look documental real",
     value:
-      "fotografia documental realista, piel natural, luz ambiente suave, microdetalle real, cero look plastico",
+      "fotografia documental realista, piel natural, luz suave, microdetalle, sin apariencia plastica",
   },
   {
     label: "Cine contemplativo",
     value:
-      "realismo cinematografico contemplativo, profundidad emocional, atmosfera serena, composicion elegante",
+      "realismo cinematografico contemplativo, profundidad emocional, atmosfera serena, composicion elegante, grano fino",
   },
   {
-    label: "Hook de alto impacto",
+    label: "Hook de impacto",
     value:
-      "inicio visual con alto contraste narrativo, protagonista creible, gesto poderoso, lectura inmediata",
+      "gancho visual inmediato, accion clara en primer plano, gesto poderoso, foco preciso, composicion limpia",
   },
   {
-    label: "Sabiduria ancestral",
+    label: "Estetica ancestral",
     value:
-      "presencia de sabio sereno, simbolismo sobrio, espiritualidad autentica, textura organica y real",
+      "simbolismo sobrio, espiritualidad autentica, textura organica, vestuario realista, sin ornamentacion recargada",
+  },
+  {
+    label: "Quitar texto literal",
+    value:
+      "representar el concepto visualmente, sin letras, sin caligrafia, sin pergaminos legibles, sin carteles, sin tipografia",
   },
 ];
 
@@ -46,6 +51,18 @@ function assetUrl(asset: GeneratedAsset): string | undefined {
   if (asset.path?.startsWith("/")) return asset.path;
   if (asset.path) return `/generated/${asset.path}`;
   return undefined;
+}
+
+function subtitlePreview(script: ScriptDocumentV2, phraseIndexes: number[]): string {
+  return phraseIndexes
+    .map((index) => script.phrases[index]?.text ?? "")
+    .filter((text) => text.length > 0)
+    .slice(0, 2)
+    .join(" / ");
+}
+
+function isVerbosePrompt(value: string): boolean {
+  return value.trim().length > 360;
 }
 
 export const VisualReview: React.FC<VisualReviewProps> = ({
@@ -85,7 +102,7 @@ export const VisualReview: React.FC<VisualReviewProps> = ({
             <p className="eyebrow">Bloques de prompt visual</p>
             <h2>Refina cada foto para que se vea real y fiel a tu historia.</h2>
             <p className="muted-copy">
-              Todo en espanol. Cada prompt debe responder al texto de su acto.
+              Cada acto separa subtitulos del video y prompt fotografico de la imagen.
             </p>
           </div>
           <div className="consistency-stack">
@@ -120,15 +137,34 @@ export const VisualReview: React.FC<VisualReviewProps> = ({
                   <p>{act.summary}</p>
                 </div>
 
+                <div className="script-usage-box">
+                  <span className="inline-tag inline-tag-primary">Subtitulo en video</span>
+                  <p>
+                    {subtitlePreview(script, act.phraseIndexes) ||
+                      "Este acto aun no tiene frases vinculadas."}
+                  </p>
+                </div>
+
                 <label className="field">
-                  <span>Prompt visual final (espanol)</span>
+                  <span>Prompt de foto (no aparece en el video)</span>
                   <textarea
-                    rows={6}
+                    className="visual-prompt-textarea"
+                    rows={7}
                     value={act.visualPrompt}
                     onChange={(event) => onActPromptChange(index, event.target.value)}
-                    placeholder="Describe escena fotografica real: sujeto, accion, lugar, luz, lente, profundidad y textura."
+                    placeholder="Describe una sola escena: sujeto, accion, lugar, luz y lente. Sin texto impreso en la imagen."
                   />
                 </label>
+
+                {isVerbosePrompt(act.visualPrompt) ? (
+                  <p className="field-helper field-helper-warning">
+                    Prompt demasiado largo: si hay mucho texto, la IA tiende a meter letras dentro de la imagen.
+                  </p>
+                ) : (
+                  <p className="field-helper">
+                    Mantener entre 1 y 3 frases visuales concretas mejora la calidad y evita look IA.
+                  </p>
+                )}
 
                 <div className="chip-row">
                   {PROMPT_PRESETS.map((preset) => (

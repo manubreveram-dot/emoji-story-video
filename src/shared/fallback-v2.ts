@@ -101,6 +101,14 @@ function takeLeadKeyword(idea: string): string {
   return first ?? "cambio";
 }
 
+function clipWords(value: string, maxWords: number): string {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) {
+    return words.join(" ");
+  }
+  return `${words.slice(0, maxWords).join(" ")}...`;
+}
+
 function buildStyleBible(artStyle: string, idea: string): StyleBible {
   const cleaned = cleanIdea(idea);
   const keywords = takeIdeaKeywords(cleaned).join(", ");
@@ -147,7 +155,16 @@ function buildPhrases(idea: string, phraseCount: number): PhraseDraft[] {
 }
 
 function summarizePhrases(phrases: PhraseDraft[]): string {
-  return phrases.map((phrase) => phrase.text).join(" ");
+  if (phrases.length === 0) {
+    return "";
+  }
+  const first = phrases[0]?.text ?? "";
+  const middle = phrases[Math.floor(phrases.length / 2)]?.text ?? "";
+  const last = phrases[phrases.length - 1]?.text ?? "";
+  return [first, middle, last]
+    .filter(Boolean)
+    .map((phrase) => clipWords(phrase, 12))
+    .join(" | ");
 }
 
 function buildActRanges(phraseCount: number): Array<[number, number]> {
@@ -184,8 +201,9 @@ function buildActs(phrases: PhraseDraft[], idea: string): ActDraft[] {
       visualPrompt: [
         `Fotografia vertical 9:16 para Acto ${beat}.`,
         `Contexto central: ${keywords}.`,
-        subset.map((phrase) => phrase.text).join(" "),
-        `Estetica realista cinematografica, continuidad de protagonista, mood ${mood}, cero apariencia IA.`,
+        `Escena unica con protagonista creible, accion clara y contexto emocional ${mood}.`,
+        "Luz natural cinematografica, textura organica y continuidad de personaje.",
+        "Sin letras, sin texto sobreimpreso, sin tipografia visible.",
       ].join(" "),
     };
   });

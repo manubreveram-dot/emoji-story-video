@@ -2,9 +2,8 @@ import React from "react";
 import { AbsoluteFill } from "remotion";
 import type { SceneBlueprint } from "../../types/scene";
 import { AnimatedImage } from "../../components/AnimatedImage";
-import { AnimatedText } from "../../components/AnimatedText";
-import { AnimatedEmoji } from "../../components/AnimatedEmoji";
 import { Background } from "../../components/Background";
+import { StoryCaption } from "../../components/StoryCaption";
 
 export const ImageTextScene: React.FC<{ scene: SceneBlueprint }> = ({ scene }) => {
   const hasImage = scene.imageUrl && scene.imageUrl.length > 0;
@@ -45,38 +44,18 @@ export const ImageTextScene: React.FC<{ scene: SceneBlueprint }> = ({ scene }) =
           background:
             "linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,250,255,0.98))",
           borderTop: "1px solid rgba(66, 133, 244, 0.25)",
-          padding: "56px 56px 52px",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
+          padding: "36px 42px 38px",
         }}
       >
-        <div>
-          <AnimatedText
-            text={scene.text}
-            animation={scene.textAnimation}
-            color="#14213d"
-            fontSize={68}
-            fontWeight="800"
-            delay={8}
-            textAlign="left"
-            maxWidth={900}
-            textShadow="none"
-            lineHeight={1.15}
-          />
-        </div>
-
-        <div style={{ display: "flex", gap: 16 }}>
-          {scene.emojis.slice(0, 3).map((emoji, index) => (
-            <AnimatedEmoji
-              key={`${emoji}-${index}`}
-              emoji={emoji}
-              animation={scene.emojiAnimation}
-              size={62}
-              delay={18 + index * 8}
-            />
-          ))}
-        </div>
+        <StoryCaption
+          text={scene.text}
+          emojis={scene.emojis}
+          textAnimation={scene.textAnimation}
+          emojiAnimation={scene.emojiAnimation}
+          tone="light"
+          align="left"
+          compact
+        />
       </div>
     </AbsoluteFill>
   );

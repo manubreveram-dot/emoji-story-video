@@ -56,6 +56,14 @@ function countWords(value: string): number {
   return value.trim().split(/\s+/).filter(Boolean).length;
 }
 
+function findActIndexForPhrase(
+  acts: ActDraft[],
+  phraseIndex: number,
+): number | null {
+  const index = acts.findIndex((act) => act.phraseIndexes.includes(phraseIndex));
+  return index >= 0 ? index : null;
+}
+
 export const ScriptLab: React.FC<ScriptLabProps> = ({
   script,
   isSaving,
@@ -75,7 +83,7 @@ export const ScriptLab: React.FC<ScriptLabProps> = ({
             <p className="eyebrow">Laboratorio de guion</p>
             <h2>{script.title}</h2>
             <p className="muted-copy">
-              Ajusta texto, ritmo y claridad para que cada frase empuje la historia.
+              Define subtitulos con ritmo y claridad para sostener un storytelling dinamico.
             </p>
             <p className="muted-copy">
               {script.phraseCount} frases | {sumDuration(script.phrases)} segundos.
@@ -83,10 +91,25 @@ export const ScriptLab: React.FC<ScriptLabProps> = ({
           </div>
         </div>
 
+        <div className="guide-strip">
+          <div className="guide-card">
+            <strong>Subtitulo del video</strong>
+            <p>Lo que escribes en cada frase se muestra en pantalla y se usa para narracion.</p>
+          </div>
+          <div className="guide-card">
+            <strong>Prompt de foto</strong>
+            <p>Se edita por acto y solo dirige la imagen. No se imprime texto dentro de la foto.</p>
+          </div>
+          <div className="guide-card">
+            <strong>Regla de oro</strong>
+            <p>Frases cortas + prompts visuales concretos = mejor hook y mayor retencion.</p>
+          </div>
+        </div>
+
         <div className="editor-group">
           <h3>Frases del guion</h3>
           <p className="muted-copy">
-            Mantiene frases cortas, visuales y con emocion concreta.
+            Cada bloque controla el subtitulo en pantalla y la voz (si TTS esta activo).
           </p>
 
           <div className="phrase-list">
@@ -98,12 +121,32 @@ export const ScriptLab: React.FC<ScriptLabProps> = ({
                     {phrase.durationSeconds}s | {countWords(phrase.text)} palabras
                   </span>
                 </div>
-                <textarea
-                  value={phrase.text}
-                  rows={3}
-                  onChange={(event) => onPhraseChange(index, event.target.value)}
-                  placeholder="Escribe la narracion exacta que debe mostrarse en pantalla..."
-                />
+
+                <div className="phrase-tags">
+                  <span className="inline-tag inline-tag-primary">Aparece en video</span>
+                  <span className="inline-tag">
+                    Acto{" "}
+                    {(findActIndexForPhrase(script.acts, index) ?? 0) + 1}
+                  </span>
+                  {phrase.emojis.length > 0 ? (
+                    <span className="inline-tag">{phrase.emojis.slice(0, 4).join(" ")}</span>
+                  ) : null}
+                </div>
+
+                <label className="field">
+                  <span>Subtitulo / narracion de esta frase</span>
+                  <textarea
+                    className="subtitle-textarea"
+                    value={phrase.text}
+                    rows={4}
+                    onChange={(event) => onPhraseChange(index, event.target.value)}
+                    placeholder="Ejemplo: Respira profundo. Hoy sueltas el peso viejo."
+                  />
+                </label>
+
+                <p className="field-helper">
+                  Recomendado: 4 a 10 palabras claras, emocionales y faciles de leer en movil.
+                </p>
               </article>
             ))}
           </div>
@@ -116,7 +159,7 @@ export const ScriptLab: React.FC<ScriptLabProps> = ({
             <p className="eyebrow">Bloques de prompt visual</p>
             <h3>Direccion fotografica por acto</h3>
             <p className="muted-copy">
-              Define la imagen exacta de cada bloque narrativo antes de generar.
+              Separa bien historia y fotografia para evitar imagenes con exceso de texto.
             </p>
           </div>
         </div>
@@ -138,22 +181,24 @@ export const ScriptLab: React.FC<ScriptLabProps> = ({
               </label>
 
               <label className="field">
-                <span>Resumen narrativo</span>
+                <span>Resumen narrativo del acto (interno)</span>
                 <textarea
+                  className="act-summary-textarea"
                   value={act.summary}
-                  rows={3}
+                  rows={4}
                   onChange={(event) => onActChange(index, "summary", event.target.value)}
-                  placeholder="Que pasa en este acto y cual es la emocion dominante..."
+                  placeholder="Que debe transmitir este acto en terminos de historia y emocion."
                 />
               </label>
 
               <label className="field">
-                <span>Prompt visual final (espanol)</span>
+                <span>Prompt visual de la foto (solo imagen, sin letras)</span>
                 <textarea
+                  className="visual-prompt-textarea"
                   value={act.visualPrompt}
-                  rows={5}
+                  rows={7}
                   onChange={(event) => onActChange(index, "visualPrompt", event.target.value)}
-                  placeholder="Escena realista: sujeto, accion, entorno, luz, lente, textura y atmosfera."
+                  placeholder="Describe sujeto, accion, entorno, luz, lente y atmosfera. Evita poemas, versos y textos literales."
                 />
               </label>
 
@@ -165,6 +210,10 @@ export const ScriptLab: React.FC<ScriptLabProps> = ({
                   placeholder="1,2,3"
                 />
               </label>
+
+              <p className="field-helper">
+                Este prompt no aparece en pantalla. Solo lo usa el generador de fotos.
+              </p>
             </article>
           ))}
         </div>
@@ -174,9 +223,9 @@ export const ScriptLab: React.FC<ScriptLabProps> = ({
         <div className="panel-header">
           <div>
             <p className="eyebrow">Guia visual</p>
-            <h3>Sistema estetico conectado al brief</h3>
+            <h3>ADN visual global del proyecto</h3>
             <p className="muted-copy">
-              Este bloque asegura continuidad real entre todas las escenas.
+              Mantiene continuidad de estilo, protagonista y look cinematografico en todos los actos.
             </p>
           </div>
         </div>

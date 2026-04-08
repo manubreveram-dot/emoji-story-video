@@ -561,6 +561,7 @@ a {
 
 .editor-card {
   border-width: 1px;
+  padding: 16px;
 }
 
 .act-head {
@@ -574,7 +575,7 @@ a {
 .progress-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .progress-list-compact {
@@ -596,6 +597,106 @@ a {
   color: var(--muted);
   font-size: 0.82rem;
   margin-bottom: 8px;
+}
+
+.guide-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.guide-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fbfcff;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.guide-card strong {
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.guide-card p {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.phrase-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.inline-tag {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f7f8fb;
+  color: #353d4c;
+  padding: 6px 11px;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.inline-tag-primary {
+  border-color: #c7d0df;
+  background: #edf2f9;
+}
+
+.field-helper {
+  margin-top: 8px;
+  color: #6a7282;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.field-helper-warning {
+  color: #8a5248;
+}
+
+.editor-card textarea,
+.editor-card input {
+  width: 100%;
+}
+
+.subtitle-textarea {
+  min-height: 128px;
+  font-size: 1.08rem;
+  line-height: 1.45;
+}
+
+.act-summary-textarea {
+  min-height: 118px;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.visual-prompt-textarea {
+  min-height: 188px;
+  font-size: 1rem;
+  line-height: 1.52;
+}
+
+.script-usage-box {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8f9fc;
+  padding: 10px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.script-usage-box p {
+  color: #404859;
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
 .style-bible-grid {
@@ -737,6 +838,10 @@ a {
   .wizard-header-meta,
   .consistency-stack {
     align-items: flex-start;
+  }
+
+  .guide-strip {
+    grid-template-columns: 1fr;
   }
 }
 

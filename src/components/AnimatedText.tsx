@@ -30,7 +30,7 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({
   fontWeight = "700",
   delay = 0,
   textAlign = "center",
-  fontFamily = "\"Montserrat\", \"Inter\", sans-serif",
+  fontFamily = "\"SF Pro Display\", \"SF Pro Text\", \"Montserrat\", \"Inter\", sans-serif",
   letterSpacing = 0,
   maxWidth,
   textShadow = "0 6px 20px rgba(0, 0, 0, 0.22)",

@@ -260,7 +260,7 @@ function toStyleBible(
     .split(/\s+/)
     .filter((token) => token.length >= 4)
     .slice(0, 8)
-    .join(", ");
+    .join(", ") || "historia emotiva en formato vertical";
 
   const palette = toTextValue(rawStyleBible.palette, "grises neutros y blancos suaves");
   const lighting = toTextValue(rawStyleBible.lighting, "luz natural cinematografica");
@@ -271,17 +271,21 @@ function toStyleBible(
   );
   const negativePromptBase = toTextValue(
     rawStyleBible.negativePrompt,
-    "piel plastica, manos deformes, ojos irreales, texto en imagen, watermark, artefactos IA",
+    "piel plastica, manos deformes, ojos irreales, texto en imagen, watermark, artefactos IA, caligrafia",
   );
   const requiredNegative =
-    "piel plastica, manos deformes, ojos irreales, texto en imagen, watermark, artefactos IA";
+    "piel plastica, manos deformes, ojos irreales, texto en imagen, watermark, artefactos IA, caligrafia, carteles legibles";
+  const normalizedCharacter = characterDescriptors
+    .replace(/\|/g, ", ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   return {
     artStyle: toTextValue(artStyle, "realismo fotografico cinematografico"),
-    palette: `${palette} | contexto: ${ideaKeywords}`,
+    palette: `${palette} | contexto visual: ${ideaKeywords}`,
     lighting,
     camera,
-    characterDescriptors: `${characterDescriptors} | referencia narrativa: ${idea.slice(0, 220)}`,
+    characterDescriptors: normalizedCharacter,
     negativePrompt: negativePromptBase.includes("artefactos")
       ? negativePromptBase
       : `${negativePromptBase}, ${requiredNegative}`,
