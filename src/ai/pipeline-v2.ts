@@ -38,6 +38,43 @@ type RawScriptV2Response = {
   }>;
 };
 
+function toTextValue(value: unknown, fallback = ""): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value).trim();
+  }
+  if (Array.isArray(value)) {
+    const joined = value
+      .map((item) => toTextValue(item, ""))
+      .filter((item) => item.length > 0)
+      .join(", ");
+    return joined.trim() || fallback;
+  }
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value).trim();
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
+function toSafeSeed(value: unknown, fallback = 1084): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(1, Math.round(value));
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.max(1, Math.round(parsed));
+    }
+  }
+  return fallback;
+}
+
 function parseModelJson<T>(text: string): T {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -225,20 +262,30 @@ function toStyleBible(
     .slice(0, 8)
     .join(", ");
 
-  const negativePromptBase = rawStyleBible.negativePrompt.trim();
+  const palette = toTextValue(rawStyleBible.palette, "grises neutros y blancos suaves");
+  const lighting = toTextValue(rawStyleBible.lighting, "luz natural cinematografica");
+  const camera = toTextValue(rawStyleBible.camera, "vertical 9:16 con profundidad real");
+  const characterDescriptors = toTextValue(
+    rawStyleBible.characterDescriptors,
+    "protagonista coherente en todas las escenas",
+  );
+  const negativePromptBase = toTextValue(
+    rawStyleBible.negativePrompt,
+    "piel plastica, manos deformes, ojos irreales, texto en imagen, watermark, artefactos IA",
+  );
   const requiredNegative =
     "piel plastica, manos deformes, ojos irreales, texto en imagen, watermark, artefactos IA";
 
   return {
-    artStyle,
-    palette: `${rawStyleBible.palette.trim()} | contexto: ${ideaKeywords}`,
-    lighting: rawStyleBible.lighting.trim(),
-    camera: rawStyleBible.camera.trim(),
-    characterDescriptors: `${rawStyleBible.characterDescriptors.trim()} | referencia narrativa: ${idea.slice(0, 220)}`,
+    artStyle: toTextValue(artStyle, "realismo fotografico cinematografico"),
+    palette: `${palette} | contexto: ${ideaKeywords}`,
+    lighting,
+    camera,
+    characterDescriptors: `${characterDescriptors} | referencia narrativa: ${idea.slice(0, 220)}`,
     negativePrompt: negativePromptBase.includes("artefactos")
       ? negativePromptBase
       : `${negativePromptBase}, ${requiredNegative}`,
-    seedBase: Math.max(1, Math.round(rawStyleBible.seedBase)),
+    seedBase: toSafeSeed(rawStyleBible.seedBase),
   };
 }
 
