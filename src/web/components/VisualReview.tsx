@@ -4,6 +4,7 @@ import type {
   ScriptDocumentV2,
   VisualPack,
 } from "../../types/workflow-v2";
+import { DISTOPIAN_VISUAL_PRESETS } from "../../shared/channel-preset";
 import { JobProgressList } from "./JobProgressList";
 
 type VisualReviewProps = {
@@ -17,29 +18,6 @@ type VisualReviewProps = {
   onActPromptChange: (actIndex: number, value: string) => void;
   onApplyPromptPreset: (actIndex: number, preset: string) => void;
 };
-
-const PROMPT_PRESETS: Array<{ label: string; value: string }> = [
-  {
-    label: "Retrato documental",
-    value:
-      "fotografia documental realista, piel natural, luz ambiente suave, microdetalle real, cero look plastico",
-  },
-  {
-    label: "Cine contemplativo",
-    value:
-      "realismo cinematografico contemplativo, profundidad emocional, atmosfera serena, composicion elegante",
-  },
-  {
-    label: "Hook de alto impacto",
-    value:
-      "inicio visual con alto contraste narrativo, protagonista creible, gesto poderoso, lectura inmediata",
-  },
-  {
-    label: "Sabiduria ancestral",
-    value:
-      "presencia de sabio sereno, simbolismo sobrio, espiritualidad autentica, textura organica y real",
-  },
-];
 
 function assetUrl(asset: GeneratedAsset): string | undefined {
   if (asset.url) return asset.url;
@@ -131,7 +109,7 @@ export const VisualReview: React.FC<VisualReviewProps> = ({
                 </label>
 
                 <div className="chip-row">
-                  {PROMPT_PRESETS.map((preset) => (
+                  {DISTOPIAN_VISUAL_PRESETS.map((preset) => (
                     <button
                       key={preset.label}
                       type="button"

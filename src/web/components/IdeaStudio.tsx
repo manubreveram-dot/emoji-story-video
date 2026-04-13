@@ -1,7 +1,13 @@
 import React, { useEffect, useState } from "react";
+import {
+  CHANNEL_NAME,
+  DEFAULT_DISTOPIAN_IDEA,
+  DEFAULT_DISTOPIAN_STYLE,
+  DISTOPIAN_SERIES_PRESETS,
+} from "../../shared/channel-preset";
 
 const PHRASE_COUNT_OPTIONS = [6, 8, 10, 12, 14];
-const DEFAULT_INTERNAL_STYLE = "realismo fotografico cinematografico";
+const DEFAULT_INTERNAL_STYLE = DEFAULT_DISTOPIAN_STYLE;
 
 type IdeaStudioProps = {
   initialIdea: string;
@@ -35,7 +41,10 @@ function deriveArtStyle(idea: string, fallback: string): string {
     return fallback || DEFAULT_INTERNAL_STYLE;
   }
 
-  return `realismo fotografico de alta fidelidad, direccion cinematografica coherente con este contexto: ${source.slice(0, 260)}`;
+  return [
+    DEFAULT_INTERNAL_STYLE,
+    `direccion coherente con este contexto: ${source.slice(0, 260)}`,
+  ].join(", ");
 }
 
 export const IdeaStudio: React.FC<IdeaStudioProps> = ({
@@ -71,13 +80,14 @@ export const IdeaStudio: React.FC<IdeaStudioProps> = ({
         <div className="panel-header">
           <div>
             <p className="eyebrow">Paso 1</p>
-            <h2>Describe tu historia con tono, mensaje y atmosfera visual.</h2>
+            <h2>Disena una micro historia distopica con hook, escalada y twist.</h2>
           </div>
         </div>
 
         <p className="lead">
-          Incluye hook inicial, emocion dominante, arco narrativo y cierre.
-          El sistema construira guion y prompts visuales a partir de este texto.
+          {CHANNEL_NAME}. Escribe vigilancia, reemplazo, fallo del sistema o una
+          tecnologia que cruza un limite. El sistema construira guion y prompts
+          visuales listos para un video inquietante y cinematografico.
         </p>
 
         <label className="field">
@@ -86,9 +96,25 @@ export const IdeaStudio: React.FC<IdeaStudioProps> = ({
             value={idea}
             onChange={(event) => setIdea(event.target.value)}
             rows={10}
-            placeholder="Ejemplo: Quiero un video vertical sobre disciplina interior con hook fuerte tipo TikTok. Debe sentirse real, cinematografico, profundo y cerrar con una frase poderosa."
+            placeholder={DEFAULT_DISTOPIAN_IDEA}
           />
         </label>
+
+        <div className="field">
+          <span>Series base del canal</span>
+          <div className="option-row" role="group" aria-label="Series distopicas">
+            {DISTOPIAN_SERIES_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className="option-pill"
+                onClick={() => setIdea(preset.brief)}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="field">
           <span>Cuantas frases debe tener el guion</span>
@@ -128,10 +154,11 @@ export const IdeaStudio: React.FC<IdeaStudioProps> = ({
       <aside className="panel aside-panel panel-light">
         <div className="summary-card">
           <p className="eyebrow">Guia rapida</p>
-          <h3>Texto que mejor funciona</h3>
+          <h3>ADN del canal</h3>
           <p className="muted-copy">
-            Escribe en espanol con detalles concretos: protagonista, ambiente,
-            conflicto, transformacion y cierre.
+            Oscuro, minimalista, cinematografico, tecnologico e inquietante.
+            Blanco y negro, alto contraste, una fuente de luz y un twist final
+            que deje sensacion, no explicacion.
           </p>
         </div>
 

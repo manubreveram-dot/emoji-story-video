@@ -17,6 +17,11 @@ import type {
   WizardStepV2,
 } from "../types/workflow-v2";
 import { scriptToScenes } from "../ai/script-to-scenes";
+import {
+  CHANNEL_NAME,
+  DEFAULT_DISTOPIAN_IDEA,
+  DEFAULT_DISTOPIAN_STYLE,
+} from "../shared/channel-preset";
 import { createFallbackScriptDocument } from "../shared/fallback-v2";
 import { getSceneTreatment } from "../shared/video-layout";
 import { IdeaStudio } from "./components/IdeaStudio";
@@ -58,7 +63,7 @@ const API_BASE = env.env?.VITE_API_BASE
   : "";
 const DEFAULT_BUDGET_CAP = 0.5;
 const DEFAULT_PHRASE_COUNT = 10;
-const DEFAULT_STYLE = "realismo fotografico cinematografico";
+const DEFAULT_STYLE = DEFAULT_DISTOPIAN_STYLE;
 const SESSION_STORAGE_KEY = "emoji-story-video:v2:sessions";
 const MAX_SAVED_SESSIONS = 8;
 const DEFAULT_COST_BREAKDOWN: CostBreakdown = {
@@ -806,12 +811,12 @@ export const App: React.FC = () => {
         step === "idea"
           ? "Define tu historia y prepara un video con direccion cinematografica."
           : step === "script-lab"
-            ? "Refina el guion y su direccion visual antes de generar."
+            ? "Refina el guion, el suspense y la direccion visual antes de generar."
             : step === "visual-review"
-              ? "Ajusta cada instruccion visual para obtener imagenes solidas y coherentes."
-              : "Renderiza y descarga el resultado final."
+              ? "Ajusta cada foto para que la tension visual se sienta real, oscura y consistente."
+              : "Renderiza y descarga la micro historia final."
       }
-      subtitle={`Flujo en 4 pasos con ${scriptDocument?.phraseCount ?? DEFAULT_PHRASE_COUNT} frases editables y control visual completo.`}
+      subtitle={`${CHANNEL_NAME}. Flujo en 4 pasos con ${scriptDocument?.phraseCount ?? DEFAULT_PHRASE_COUNT} frases editables, prompts visuales y twist final.`}
       onReset={resetWorkflowFromScratch}
     >
       {error ? (
@@ -825,7 +830,7 @@ export const App: React.FC = () => {
 
       {step === "idea" ? (
         <IdeaStudio
-          initialIdea={scriptDocument?.idea ?? ""}
+          initialIdea={scriptDocument?.idea ?? DEFAULT_DISTOPIAN_IDEA}
           initialStyle={scriptDocument?.styleBible.artStyle ?? DEFAULT_STYLE}
           initialBudgetCapUsd={scriptDocument?.budgetCapUsd ?? DEFAULT_BUDGET_CAP}
           initialUseVeo={scriptDocument?.useVeo ?? true}

@@ -4,10 +4,10 @@ export function buildScriptPromptV2(
   targetLineCount: number,
   targetDurationSeconds = 30,
 ): string {
-  return `Eres director creativo senior de video vertical para redes.
+  return `Eres showrunner y director creativo de un canal de YouTube de micro historias distopicas con IA.
 
 Objetivo:
-Crear un paquete narrativo y visual premium, coherente con este brief del usuario:
+Crear un paquete narrativo y visual premium para una micro historia de terror psicologico y distopia tecnologica, coherente con este brief del usuario:
 "${idea}"
 
 Respuesta:
@@ -49,16 +49,39 @@ Reglas duras:
 - EXACTAMENTE ${targetLineCount} lineas.
 - La suma de durationSeconds debe ser EXACTAMENTE ${targetDurationSeconds}.
 - Maximo 12 palabras por narration.
-- Primera linea: hook fuerte y directo.
-- Ultima linea: cierre memorable y emocional.
+- Primera linea: hook fuerte, directo e inquietante.
+- Ultima linea: twist o cierre final que deje incomodidad.
 - Prohibido texto abstracto vacio o frases genericas.
 - visualIntent debe ser realista, cinematografico y util para generar foto de calidad.
 
+Formula narrativa obligatoria:
+- Inicio: hook inmediato en 0-3 segundos.
+- Desarrollo temprano: setup claro del contexto y la regla del mundo.
+- Mitad: escalada o anomalia creciente.
+- Final: revelacion o twist incomodo.
+
+ADN del canal:
+- Oscuro, minimalista, cinematografico, tecnologico e inquietante.
+- No es terror explicito ni gore.
+- Debe sentirse como incomodidad inteligente.
+- La tecnologia observa, predice, controla o reemplaza.
+- Los finales deben dejar eco emocional, no moraleja obvia.
+
 Coherencia con el brief:
 - Usa vocabulario del usuario, no inventes otro tema.
-- Si el usuario menciona estilo espiritual, sabio, ancestral o tono TikTok, integralo en guion y visualIntent.
+- Si el usuario menciona vigilancia, app, camara, algoritmo, permisos, delay, copia, sistema o reemplazo, integralo como motor de la historia.
 - styleBible debe derivarse del brief, no de plantillas genericas.
 - Mantener continuidad del protagonista, atmosfera y contexto durante todo el video.
+
+Direccion visual base del canal:
+- Blanco y negro predominante.
+- Alto contraste y sombras duras.
+- Un solo color acento rojo o azul si aporta tension.
+- Mucho espacio negativo.
+- Fuente unica de luz: pantalla, celular, farol o interfaz.
+- Rostros parcialmente ocultos.
+- Planos cerrados, zoom lento, POV humano o POV IA.
+- Glitches sutiles, flicker de luz y overlays de UI cuando aplique.
 
 Negative prompt obligatorio (integrado dentro de styleBible.negativePrompt):
 - piel plastica
